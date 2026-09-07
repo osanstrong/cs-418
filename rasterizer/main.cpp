@@ -81,6 +81,59 @@ Vec2 miny(const Vec2& a, const Vec2& b) {
   if (a.y < b.y) return a; else return b;
 }
 
+typedef union {
+  ld p[10];
+  struct {
+    ld x, y, z, w, r, g, b, a, s, t;
+  };
+} PixVec;
+
+PixVec pix_p4c3(Vec4 xyzw, ld r, ld g, ld b) {
+  auto [x, y, z, w] = xyzw;
+  return PixVec{x, y, z, w, r, g, b, 1, 0, 0};
+}
+
+PixVec operator+(const PixVec& lhs, const PixVec& rhs) {
+  PixVec target{};
+  for (int i = 0; i < 10; i++) target.p[i] = lhs.p[i] + rhs.p[i];
+  return target;
+}
+
+PixVec operator/(const PixVec& lhs, ld rhs) {
+  PixVec target{};
+  for (int i = 0; i < 10; i++) target.p[i] = lhs.p[i] / rhs;
+  return target;
+}
+
+PixVec operator*(const PixVec& lhs, ld rhs) {
+  PixVec target{};
+  for (int i = 0; i < 10; i++) target.p[i] = lhs.p[i] * rhs;
+  return target;
+}
+
+// Divide by w except for w, which becomes the reciprocal
+PixVec div_w(const PixVec& pre_div) {
+  PixVec target = pre_div / pre_div.w;
+  target.w = 1 / pre_div.w;
+  return target;
+}
+
+// Divide by (1/w), only applies to non-position parts
+PixVec undiv_w(const PixVec& post_div) {
+  PixVec target = div_w(post_div);
+  for (int i = 0; i < 3; i++) target.p[i] = post_div.p[i];
+}
+
+ld gamma(ld lin_val) {
+  // TODO: convert from linear to gamma
+  return lin_val;
+}
+
+ld ungam(ld gam_val) {
+  // TODO: Are we ever given gamma-corrected values?
+  return gam_val;
+}
+
 struct Context {
   
   // Position / color buffers
