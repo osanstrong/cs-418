@@ -19,6 +19,9 @@ using LDVec = std::vector<ld>;
 
 ld max(ld a, ld b) {return a > b ? a : b;}
 ld min(ld a, ld b) {return a < b ? a : b;}
+ld clamp(ld val, ld hi, ld lo) {
+  return max(lo, min(val, hi));
+}
 
 struct Vec2 {
   ld x, y;
@@ -81,8 +84,9 @@ Vec2 miny(const Vec2& a, const Vec2& b) {
   if (a.y < b.y) return a; else return b;
 }
 
+#define PIX_SIZE 10
 typedef union {
-  ld p[10];
+  ld p[PIX_SIZE];
   struct {
     ld x, y, z, w, r, g, b, a, s, t;
   };
@@ -95,26 +99,47 @@ PixVec pix_p4c3(Vec4 xyzw, ld r, ld g, ld b) {
 
 PixVec operator+(const PixVec& lhs, const PixVec& rhs) {
   PixVec target{};
-  for (int i = 0; i < 10; i++) target.p[i] = lhs.p[i] + rhs.p[i];
+  for (int i = 0; i < PIX_SIZE; i++) target.p[i] = lhs.p[i] + rhs.p[i];
+  return target;
+}
+
+PixVec& operator+=(PixVec& lhs, const PixVec& rhs) {
+  for (int i = i; i < PIX_SIZE; i++) lhs.p[i] += rhs.p[i];
+  return lhs;
+}
+
+PixVec operator-(const PixVec& lhs, const PixVec& rhs) {
+  PixVec target{};
+  for (int i = 0; i < PIX_SIZE; i++) target.p[i] = lhs.p[i] - rhs.p[i];
   return target;
 }
 
 PixVec operator/(const PixVec& lhs, ld rhs) {
   PixVec target{};
-  for (int i = 0; i < 10; i++) target.p[i] = lhs.p[i] / rhs;
+  for (int i = 0; i < PIX_SIZE; i++) target.p[i] = lhs.p[i] / rhs;
   return target;
 }
 
 PixVec operator*(const PixVec& lhs, ld rhs) {
   PixVec target{};
-  for (int i = 0; i < 10; i++) target.p[i] = lhs.p[i] * rhs;
+  for (int i = 0; i < PIX_SIZE; i++) target.p[i] = lhs.p[i] * rhs;
   return target;
 }
+
+bool operator==(const PixVec& lhs, const PixVec& rhs) {
+  for (int i = 0; i < PIX_SIZE; i++) {
+    if (lhs.p[i] != rhs.p[i]) return false;
+  }
+  return true;
+}
+
+bool operator!=(const PixVec& lhs, const PixVec& rhs) { return !(lhs == rhs); }
 
 // Divide by w except for w, which becomes the reciprocal
 PixVec div_w(const PixVec& pre_div) {
   PixVec target = pre_div / pre_div.w;
   target.w = 1 / pre_div.w;
+  for (int i = 4; i < PIX_SIZE; i++) target.p[i] = pre_div.p[i]; // FMSBL THEY WEREN'T W-CORRECTING THE COLORS
   return target;
 }
 
@@ -122,22 +147,62 @@ PixVec div_w(const PixVec& pre_div) {
 PixVec undiv_w(const PixVec& post_div) {
   PixVec target = div_w(post_div);
   for (int i = 0; i < 3; i++) target.p[i] = post_div.p[i];
+  for (int i = 4; i < PIX_SIZE; i++) target.p[i] = post_div.p[i];
+  return target;
 }
 
-ld gamma(ld lin_val) {
-  // TODO: convert from linear to gamma
-  return lin_val;
+// PixVec which minimize/maximize the target component
+PixVec argmax(const PixVec& a, const PixVec& b, int i) {
+  if (a.p[i] > b.p[i]) return a; else return b;
+}
+PixVec argmin(const PixVec& a, const PixVec& b, int i) {
+  if (a.p[i] < b.p[i]) return a; else return b;
+}
+PixVec maxx(const PixVec& a, const PixVec& b) {return argmax(a, b, 0);}
+PixVec minx(const PixVec& a, const PixVec& b) {return argmin(a, b, 0);}
+PixVec maxy(const PixVec& a, const PixVec& b) {return argmax(a, b, 1);}
+PixVec miny(const PixVec& a, const PixVec& b) {return argmin(a, b, 1);}
+
+std::string pv_to_s(const PixVec& val) {
+  std::string result = "< ";
+  for (int i = 0; i < PIX_SIZE-1; i++) result += std::to_string(val.p[i]) + ", ";
+  result += std::to_string(val.p[PIX_SIZE-1]) + " >";
+  return result;
 }
 
-ld ungam(ld gam_val) {
-  // TODO: Are we ever given gamma-corrected values?
-  return gam_val;
+ld lin_to_sRGB(ld lin_val) {
+  // TODO: Can't tell if my correction is just off slihtly or there's a fundamental flaw
+  // return pow(lin_val, 1/2.2);
+  ld threshold = 0.0031308;
+  ld gamma = 2.4;
+
+  if (lin_val <= threshold) return lin_val * 12.92;
+  return 1.055 * pow(lin_val, 1/gamma) - 0.055;
+}
+
+ld sRGB_to_lin(ld sRGB_val) {
+  // return pow(sRGB_val, 2.;2);
+  ld threshold = 0.04045;
+  ld gamma = 2.4;
+
+  if (sRGB_val <= threshold) return sRGB_val / 12.92;
+  return pow((sRGB_val + 0.055) / 1.055, gamma);
+  // return sRGB_val;
+}
+
+// Convert float between 0 and 1 to 8 bit color val
+uint8_t ftobyte(ld float_val, bool gamma_correct) {
+  if (gamma_correct) {
+    float_val = lin_to_sRGB(float_val);
+  }
+  return floor(float_val * 255.0);
+  // return floor(clamp(float_val * 255.0, 0, 255.0));
 }
 
 struct Context {
   
-  // Position / color buffers
-  Int8Vec color_buffer; //linear 0-1, not sRGB
+  //// Position / color buffers
+  LDVec color_buffer; //linear 0-1, not sRGB
   int color_size; // Either 3 or 4
   LDVec pos_buffer;
   int pos_size; // Either 2, 3, or 4
@@ -145,7 +210,7 @@ struct Context {
   FloatVec ps_buffer; //Point size
 
 
-  // State Flags
+  //// State Flags
   bool depth_enabled = false;
   bool sRGB_convert = false;
   bool hyp_interp = false;
@@ -154,16 +219,41 @@ struct Context {
   bool decals = false; // debug to include vertex colors behind transparent texture samples
   bool frustum_clipping = false; 
 
-  // Uniforms
+  //// Uniforms
   std::string filename;
   Image img;
 
-  // Constructor 
+  //// Constructor 
   Context(int width, int height) : img(Image(width, height)) {}
 
-  // Methods
+  //// Methods
+
+  // TODO: handling of this needs to be massively reworked
+  // Overload here bc it might be a state-based thing whether or not we gamma correct
+  uint8_t ftobyte_rgb(ld float_val) { 
+    uint8_t val = ::ftobyte(float_val, sRGB_convert);
+    // printf(" %Lf -> %u ", float_val, val);
+    return val;
+  }
+
+  // Assumes positions have already been divided by w
+  PixVec viewport(PixVec divw_pix) {
+    PixVec ported{divw_pix};
+    ported.x = (ported.x+1) * (img.width() / 2.0);
+    ported.y = (ported.y+1) * (img.height() / 2.0);
+    return ported;
+  }
+
+
+
   void push_pixel(int x, int y, const pixel_t& color) {
     img[y][x] = color;
+  }
+  // Equivalent of fragment logic; assumes pixel is fully undivided by w
+  void push_pixel(PixVec pixel) {
+    printf("Pushing pixel: %s \n", pv_to_s(pixel).c_str());
+    auto [x, y, z, w, r, g, b, a, s, t] = pixel.p;
+    img[int(y)][int(x)] = {ftobyte_rgb(r), ftobyte_rgb(g), ftobyte_rgb(b), ftobyte(a, false)};
   }
 
   void dda_white(const Vec2& a, const Vec2& b) {
@@ -199,6 +289,76 @@ struct Context {
     }
     // printf("\n");
   }
+  
+  // Assumes points a and b share the same y; Assumes in 1/w space
+  void push_row(PixVec a, PixVec b) {
+    PixVec left = argmin(a, b, 0);
+    PixVec right = argmax(a, b, 0);
+    // int y = a.y;
+    PixVec left_w = undiv_w(left), right_w = undiv_w(right);
+
+    // TODO: This suggests we have an interpolation error ughhhhh
+    // fml their interpolation looks uh linear over color not hyperbolic
+    printf("Row at y=%Lf or %Lf from %Lf (%Lf) to %Lf (%Lf)\n", a.y, b.y, left.x, (left_w.r), right.x, (right_w.r));
+    PixVec del = right - left;
+    PixVec s = del / del.x;
+
+    ld e = ceil(left.x) - left.x;
+    PixVec o = s * e;
+    PixVec p = left + o;
+    while (p.x < right.x) {
+      PixVec undiv = undiv_w(p);
+      push_pixel(undiv);
+      p = p + s;
+    }
+  }
+
+  // Assumes a, b, and c have not been w-divided yet
+  void scan(const PixVec& a_undiv, const PixVec& b_undiv, const PixVec& c_undiv) {
+    PixVec av = viewport(div_w(a_undiv));
+    PixVec bv = viewport(div_w(b_undiv));
+    PixVec cv = viewport(div_w(c_undiv));
+    
+    PixVec t = miny(av, miny(bv, cv));
+    PixVec b = maxy(av, maxy(bv, cv));
+    PixVec m = (t != av && b != av)? av : ((t != bv && b != bv)? bv: cv);
+
+
+    
+    
+    if (t.y == b.y) return;
+    PixVec del_b = b - t;
+    PixVec s_b = del_b / del_b.y;
+    ld e = ceil(t.y) - t.y;
+    PixVec o_b = s_b * e;
+    PixVec p_b = t + o_b;
+
+    PixVec del_m = m - t;
+    PixVec s_m = del_m / del_m.y;
+    PixVec o_m = s_m * e;
+    PixVec p_m = t + o_m;
+    printf("Initialized DDA sweep\n");
+
+    while (p_m.y < m.y) {
+      printf("Pushing a row!\n");
+      push_row(p_m, p_b);
+      p_m += s_m;
+      p_b = p_b + s_b;
+    }
+    del_m = b - m;
+    s_m = del_m / del_m.y;
+    e = ceil(m.y) - m.y;
+    o_m = s_m * e;
+    p_m = m + o_m;
+    
+    while (p_m.y < b.y) {
+      printf("Pushing a row!\n");
+      push_row(p_m, p_b);
+      p_m += s_m;
+      p_b = p_b + s_b;
+    }
+    
+  }
 
   void scan_white(const Vec4& aw, const Vec4& bw, const Vec4& cw) {
     int width = img.width(), height = img.height();
@@ -216,8 +376,6 @@ struct Context {
     // dda_white(t, b);
     // dda_white(t, m);
     // dda_white(m, b);
-
-    pixel_t white{255, 255, 255, 255};
 
     if (t.y == b.y) return;
     Vec2 del_b = b - t;
@@ -302,20 +460,20 @@ int main(int argc, char* argv[]) {
       case "color"_hash:{
         gl.color_buffer.clear();
         gl.color_size = std::stoi(cmd[1]);
-        for (int i = 2; i < cmd.size(); i++) gl.color_buffer.push_back(std::stoi(cmd[i]));
+        for (int i = 2; i < cmd.size(); i++) gl.color_buffer.push_back(std::stold(cmd[i]));
         break;}
-      case "drawPixels"_hash:{
-        printf("Running draw pixel command with buffers of size %lu, %lu into image of dims %d, %d\n", gl.pos_buffer.size(), gl.color_buffer.size(), gl.img.width(), gl.img.height());
-        int num_pixels = std::stoi(cmd[1]);
-        for (int i = 0; i < num_pixels; i++) {
-          printf("Pushing pixel %d of %d\n", i, num_pixels);
-          int x = gl.pos_buffer[i*2+0], y = gl.pos_buffer[i*2+1];
-          // Image& img = gl.img;
-          Int8Vec& cb = gl.color_buffer;
-          int i4 = i*4;
-          gl.push_pixel(x, y, {cb[i4], cb[i4+1], cb[i4+2], cb[i4+3]});
-        } 
-        break;}
+      // case "drawPixels"_hash:{
+      //   printf("Running draw pixel command with buffers of size %lu, %lu into image of dims %d, %d\n", gl.pos_buffer.size(), gl.color_buffer.size(), gl.img.width(), gl.img.height());
+      //   int num_pixels = std::stoi(cmd[1]);
+      //   for (int i = 0; i < num_pixels; i++) {
+      //     printf("Pushing pixel %d of %d\n", i, num_pixels);
+      //     int x = gl.pos_buffer[i*2+0], y = gl.pos_buffer[i*2+1];
+      //     // Image& img = gl.img;
+      //     Int8Vec& cb = gl.color_buffer;
+      //     int i4 = i*4;
+      //     gl.push_pixel(x, y, {cb[i4], cb[i4+1], cb[i4+2], cb[i4+3]});
+      //   } 
+      //   break;}
       case "drawArraysTriangles"_hash:{
         int start = std::stoi(cmd[1]);
         int num_tri = std::stoi(cmd[2]) / 3; // Assume multiple of 3 indices given
@@ -329,20 +487,38 @@ int main(int argc, char* argv[]) {
               return Vec4{pb[i], pb[i+1], pb[i+2], pb[i+3]};
           };
 
-          LDVec& pb = gl.pos_buffer;
+          auto read_poscol = [](LDVec pb, int pi, int psz, LDVec cb, int ci, int csz) {
+            PixVec result{0, 0, 0, 1, 0, 0, 0, 1, 0, 0};
+            for (int i = 0; i < psz; i++) result.p[i] = pb[pi+i];
+            for (int i = 0; i < csz; i++) result.p[i+4] = cb[ci+i];
+            return result;
+          };
+
+          LDVec& pb = gl.pos_buffer, cb = gl.color_buffer;
           // printf("Position buffer: [");
           // for (ld p : pb) printf("\t%Le,\n", p);
           // printf("]\n");
           int psz = gl.pos_size;
-          int ai = (start + t*3)*psz;
-          int bi = ai + psz;
-          int ci = bi + psz;
-          // printf("Indexing into position array of size %d at indices %d, %d, %d\n", pb.size(), ai, bi, ci);
-          Vec4 a = read_pos(pb, ai, psz);
-          Vec4 b = read_pos(pb, bi, psz);
-          Vec4 c = read_pos(pb, ci, psz);
+          int api = (start + t*3)*psz;
+          int bpi = api + psz;
+          int cpi = bpi + psz;
 
-          gl.scan_white(a, b, c);
+          int csz = gl.color_size;
+          int aci = (start + t*3)*csz;
+          int bci = aci + csz;
+          int cci = bci + csz;
+
+
+          // // printf("Indexing into position array of size %d at indices %d, %d, %d\n", pb.size(), ai, bi, ci);
+          // Vec4 a = read_pos(pb, api, psz);
+          // Vec4 b = read_pos(pb, bpi, psz);
+          // Vec4 c = read_pos(pb, cpi, psz);
+
+          // gl.scan_white(a, b, c);
+          PixVec a = read_poscol(pb, api, psz, cb, aci, csz);
+          PixVec b = read_poscol(pb, bpi, psz, cb, bci, csz);
+          PixVec c = read_poscol(pb, cpi, psz, cb, cci, csz);
+          gl.scan(a, b, c);
         }
       break;}
       default:
