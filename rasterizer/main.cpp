@@ -26,7 +26,6 @@ int main(int argc, char* argv[]) {
   StringVec raw_commands = get_lines(filepath);
   CommandVec commands = get_commands(filepath);
 
-  commands.erase(commands.begin());
 
 
   // Position / color buffers
@@ -51,6 +50,7 @@ int main(int argc, char* argv[]) {
   Command imgdef = commands.front(); // Assume first command is initializing the image 
   Image img = Image(std::stoi(imgdef[1]), std::stoi(imgdef[2]));
   auto filename = imgdef[3].c_str();
+  commands.erase(commands.begin());
   
   
 
@@ -71,29 +71,29 @@ int main(int argc, char* argv[]) {
         std::cerr << "command 'png' should only be used at start of file";
         break;}
       case "position"_hash:{
-        // Assume only position-2 is given
         pos_buffer.clear();
-        for (int i = 2; i < cmd.size(); i+=2) {
-          pos_buffer.push_back(std::stoi(cmd[i]));
-          printf("Pushing back from x index %d\n", i);
-          pos_buffer.push_back(std::stoi(cmd[i+1]));
-          printf("Pushing back from y index %d\n", i+1);
-        }
+        for (int i = 2; i < cmd.size(); i++) pos_buffer.push_back(std::stoi(cmd[i]));
+        // for (int i = 2; i < cmd.size(); i+=2) {
+        //   pos_buffer.push_back(std::stoi(cmd[i]));
+        //   printf("Pushing back from x index %d\n", i);
+        //   pos_buffer.push_back(std::stoi(cmd[i+1]));
+        //   printf("Pushing back from y index %d\n", i+1);
+        // }
         break;}
       case "color"_hash:{
-        // Assume only color-4 is given
         color_buffer.clear();
-        for (int i = 2; i < cmd.size(); i+=4) {
-          printf("Pushing back from index %d\n", i);
-          color_buffer.push_back(std::stoi(cmd[i]));
-          printf("Pushing back from index %d\n", i+1);
-          color_buffer.push_back(std::stoi(cmd[i+1]));
-          printf("Pushing back from index %d\n", i+2);
-          color_buffer.push_back(std::stoi(cmd[i+2]));
-          printf("Pushing back from index %d\n", i+3);
-          color_buffer.push_back(std::stoi(cmd[i+3]));
-          printf("Pushed back from index %d to %d\n", i, i+3);
-        }
+        for (int i = 2; i < cmd.size(); i++) color_buffer.push_back(std::stoi(cmd[i]));
+        // for (int i = 2; i < cmd.size(); i+=4) {
+        //   printf("Pushing back from index %d\n", i);
+        //   color_buffer.push_back(std::stoi(cmd[i]));
+        //   printf("Pushing back from index %d\n", i+1);
+        //   color_buffer.push_back(std::stoi(cmd[i+1]));
+        //   printf("Pushing back from index %d\n", i+2);
+        //   color_buffer.push_back(std::stoi(cmd[i+2]));
+        //   printf("Pushing back from index %d\n", i+3);
+        //   color_buffer.push_back(std::stoi(cmd[i+3]));
+        //   printf("Pushed back from index %d to %d\n", i, i+3);
+        // }
         break;}
       case "drawPixels"_hash:{
         printf("Running draw pixel command");
