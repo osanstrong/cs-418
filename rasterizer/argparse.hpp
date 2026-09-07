@@ -36,16 +36,22 @@ auto get_lines(char* const filepath) -> StringVec {
     return lines;
 }
 
-auto split(std::string target, char delim) -> StringVec {
+// Splits a string and optionally ignores empty entries
+auto split(std::string target, char delim, bool trim_empty) -> StringVec {
   StringVec tokens;
   std::string s;
 
   std::stringstream ss(target);
 
   while (std::getline(ss, s, delim)) {
+    if (s.empty() && trim_empty) continue;
     tokens.push_back(s);
   }
   return tokens;
+}
+
+auto split(std::string target, char delim) -> StringVec {
+  return split(target, delim, true);
 }
 
 auto get_commands(char* const filepath) -> CommandVec {
