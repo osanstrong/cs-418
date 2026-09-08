@@ -439,26 +439,27 @@ struct Context {
         for (int i = 0; i < csz; i++) result.p[i+4] = cb[ci+i];
         return result;
       };
-      LDVec& pb = pos_buffer, cb = color_buffer;
-      
-      int psz = pos_size;
-      int api = ai * psz;
-      int bpi = bi * psz;
-      int cpi = ci * psz;
+    LDVec& pb = pos_buffer, cb = color_buffer;
+    
+    int psz = pos_size;
+    int api = ai * psz;
+    int bpi = bi * psz;
+    int cpi = ci * psz;
 
-      int csz = color_size;
-      int aci = ai * csz;
-      int bci = bi * csz;
-      int cci = ci * csz;
-      
-      PixVec a = read_poscol(pb, api, psz, cb, aci, csz);
-      PixVec b = read_poscol(pb, bpi, psz, cb, bci, csz);
-      PixVec c = read_poscol(pb, cpi, psz, cb, cci, csz);
-      cprintf("Scanning triangle\n - %s\n - %s\n - %s\n",
-        pv_to_s(a).c_str(), 
-        pv_to_s(b).c_str(), 
-        pv_to_s(c).c_str());
-      scan(a, b, c);
+    int csz = color_size;
+    int aci = ai * csz;
+    int bci = bi * csz;
+    int cci = ci * csz;
+    cprintf("Checking out indices %d, %d, %d\n -> %d, %d, %d\n -> %d, %d, %d\n", ai, bi, ci, api, bpi, cpi, aci, bci, cci);
+    
+    PixVec a = read_poscol(pb, api, psz, cb, aci, csz);
+    PixVec b = read_poscol(pb, bpi, psz, cb, bci, csz);
+    PixVec c = read_poscol(pb, cpi, psz, cb, cci, csz);
+    cprintf("Scanning triangle\n - %s\n - %s\n - %s\n",
+      pv_to_s(a).c_str(), 
+      pv_to_s(b).c_str(), 
+      pv_to_s(c).c_str());
+    scan(a, b, c);
   }
 
   void drawArraysTriangles(int first, int num_triangles) {
@@ -482,6 +483,8 @@ struct Context {
   void drawElementsTriangles(int count, int offset) {
     for (int i = offset; i < count+offset; i+=3) {
       IntVec& eb = element_buffer;
+
+      cprintf("Looking for elements %d, %d, %d in buffer of size %d\n", i, i+1, i+2, eb.size());
       drawElementTriangle(eb[i], eb[i+1], eb[i+2]);
     }
   }
@@ -506,7 +509,6 @@ int main(int argc, char* argv[]) {
   gl.filename = imgdef[3];
 
   bool break_early = false;
-  int draw_call_num = 0;
   for (int i = 1; i < commands.size(); i++) {
     if (break_early) break;
     Command cmd = commands[i];
@@ -550,16 +552,21 @@ int main(int argc, char* argv[]) {
         gl.color_size = std::stoi(cmd[1]);
         for (int i = 2; i < cmd.size(); i++) gl.color_buffer.push_back(std::stold(cmd[i]));
         break;}
-      case "s_drawArraysTriangles"_hash:{
-        draw_call_num++;
-        gl.cprintf("Incrementing triangle #");
+      case "elements"_hash:{
+        gl.element_buffer.clear();
+        for (int i = 1; i < cmd.size(); i++) gl.element_buffer.push_back(std::stoi(cmd[i]));
       break;}
       case "drawArraysTriangles"_hash:{
         int start = std::stoi(cmd[1]);
         int num_tri = std::stoi(cmd[2]) / 3; // Assume multiple of 3 indices given
         
         gl.drawArraysTriangles(start, num_tri);
-        draw_call_num++;
+      break;}
+      case "drawElementsTriangles"_hash:{
+        int count = std::stoi(cmd[1]);
+        int offset = std::stoi(cmd[2]);
+
+        gl.drawElementsTriangles(count, offset);
       break;}
       default:
         printf("Unknown action: %s\n", name.c_str());
