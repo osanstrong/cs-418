@@ -135,22 +135,6 @@ bool operator==(const PixVec& lhs, const PixVec& rhs) {
 
 bool operator!=(const PixVec& lhs, const PixVec& rhs) { return !(lhs == rhs); }
 
-// Divide by w except for w, which becomes the reciprocal
-PixVec div_w(const PixVec& pre_div) {
-  PixVec target = pre_div / pre_div.w;
-  target.w = 1 / pre_div.w;
-  for (int i = 4; i < PIX_SIZE; i++) target.p[i] = pre_div.p[i]; // FMSBL THEY WEREN'T W-CORRECTING THE COLORS
-  return target;
-}
-
-// Divide by (1/w), only applies to non-position parts
-PixVec undiv_w(const PixVec& post_div) {
-  PixVec target = div_w(post_div);
-  for (int i = 0; i < 3; i++) target.p[i] = post_div.p[i];
-  for (int i = 4; i < PIX_SIZE; i++) target.p[i] = post_div.p[i];
-  return target;
-}
-
 // PixVec which minimize/maximize the target component
 PixVec argmax(const PixVec& a, const PixVec& b, int i) {
   if (a.p[i] > b.p[i]) return a; else return b;
@@ -206,6 +190,7 @@ struct Context {
   int color_size; // Either 3 or 4
   LDVec pos_buffer;
   int pos_size; // Either 2, 3, or 4
+  IntVec element_buffer; // Indices of elements to draw
   FloatVec tc_buffer; //texture coords, always size 2
   FloatVec ps_buffer; //Point size
 
@@ -219,6 +204,8 @@ struct Context {
   bool decals = false; // debug to include vertex colors behind transparent texture samples
   bool frustum_clipping = false; 
 
+  int verbosity = 0; // Inverse; 0 means print everything, higher restricts to more and more important things
+
   //// Uniforms
   std::string filename;
   Image img;
@@ -227,6 +214,17 @@ struct Context {
   Context(int width, int height) : img(Image(width, height)) {}
 
   //// Methods
+
+  // Print if specified level is above verbosity state
+  template<typename... Args>
+  void cprintf(int level, const char *__restrict__ __format, Args&&... args) {
+    if (level >= this->verbosity) printf(__format, std::forward<Args>(args)...);
+  }
+
+  template<typename... Args>
+  void cprintf(const char *__restrict__ __format, Args&&... args) {
+    cprintf(0, __format, std::forward<Args>(args)...);
+  }
 
   // TODO: handling of this needs to be massively reworked
   // Overload here bc it might be a state-based thing whether or not we gamma correct
@@ -244,6 +242,22 @@ struct Context {
     return ported;
   }
 
+  // Divide by w except for w, which becomes the reciprocal
+  PixVec div_w(const PixVec& pre_div) {
+    PixVec target = pre_div / pre_div.w;
+    target.w = 1 / pre_div.w;
+    for (int i = 4; i < PIX_SIZE; i++) target.p[i] = pre_div.p[i]; // FMSBL THEY WEREN'T W-CORRECTING THE COLORS
+    return target;
+  }
+
+  // Divide by (1/w), only applies to non-position parts
+  PixVec undiv_w(const PixVec& post_div) {
+    PixVec target = div_w(post_div);
+    for (int i = 0; i < 3; i++) target.p[i] = post_div.p[i];
+    for (int i = 4; i < PIX_SIZE; i++) target.p[i] = post_div.p[i];
+    return target;
+  }
+
 
 
   void push_pixel(int x, int y, const pixel_t& color) {
@@ -251,9 +265,17 @@ struct Context {
   }
   // Equivalent of fragment logic; assumes pixel is fully undivided by w
   void push_pixel(PixVec pixel) {
-    printf("Pushing pixel: %s \n", pv_to_s(pixel).c_str());
     auto [x, y, z, w, r, g, b, a, s, t] = pixel.p;
-    img[int(y)][int(x)] = {ftobyte_rgb(r), ftobyte_rgb(g), ftobyte_rgb(b), ftobyte(a, false)};
+    int xi = int(x);
+    int yi = int(y);
+    if (
+      xi >= 0 && xi < img.width() &&
+      yi >= 0 && yi < img.height()) {
+      cprintf("Pushing pixel at [%d, %d] from: %s \n", xi, yi, pv_to_s(pixel).c_str());
+      img[int(y)][int(x)] = {ftobyte_rgb(r), ftobyte_rgb(g), ftobyte_rgb(b), ftobyte(a, false)};
+    } else {
+      cprintf("Pixel at [%d, %d] rejected!\n", xi, yi);
+    }
   }
 
   void dda_white(const Vec2& a, const Vec2& b) {
@@ -278,16 +300,16 @@ struct Context {
   void row_white(ld ax, ld bx, int y) {
     ld left = min(ax, bx);
     ld right = max(ax, bx);
-    printf("Row at y=%d from %Lf to %Lf\n", y, left, right);
+    cprintf("Row at y=%d from %Lf to %Lf\n", y, left, right);
     int x = ceil(left);
     pixel_t white{255, 255, 255, 255};
-    // printf(" -> pushing at x of ");
+    // cprintf(" -> pushing at x of ");
     while (x < right) {
       push_pixel(x, y, white);
-      // printf("%d, ", x);
+      // cprintf("%d, ", x);
       x++;
     }
-    // printf("\n");
+    // cprintf("\n");
   }
   
   // Assumes points a and b share the same y; Assumes in 1/w space
@@ -299,7 +321,7 @@ struct Context {
 
     // TODO: This suggests we have an interpolation error ughhhhh
     // fml their interpolation looks uh linear over color not hyperbolic
-    printf("Row at y=%Lf or %Lf from %Lf (%Lf) to %Lf (%Lf)\n", a.y, b.y, left.x, (left_w.r), right.x, (right_w.r));
+    cprintf("Row at y=%Lf or %Lf from %Lf (%Lf) to %Lf (%Lf)\n", a.y, b.y, left.x, (left_w.r), right.x, (right_w.r));
     PixVec del = right - left;
     PixVec s = del / del.x;
 
@@ -337,10 +359,10 @@ struct Context {
     PixVec s_m = del_m / del_m.y;
     PixVec o_m = s_m * e;
     PixVec p_m = t + o_m;
-    printf("Initialized DDA sweep\n");
+    cprintf("Initialized DDA sweep\n");
 
     while (p_m.y < m.y) {
-      printf("Pushing a row!\n");
+      cprintf("Pushing a row!\n");
       push_row(p_m, p_b);
       p_m += s_m;
       p_b = p_b + s_b;
@@ -352,7 +374,7 @@ struct Context {
     p_m = m + o_m;
     
     while (p_m.y < b.y) {
-      printf("Pushing a row!\n");
+      cprintf("Pushing a row!\n");
       push_row(p_m, p_b);
       p_m += s_m;
       p_b = p_b + s_b;
@@ -370,8 +392,8 @@ struct Context {
     Vec2 b = maxy(av, maxy(bv, cv));
     Vec2 m = (t != av && b != av)? av : ((t != bv && b != bv)? bv: cv);
 
-    printf("a, b, c: \n - %s\n - %s\n - %s\n", av.to_str().c_str(), bv.to_str().c_str(), cv.to_str().c_str());
-    printf("t, m, b: \n - %s\n - %s\n - %s\n", t.to_str().c_str(), m.to_str().c_str(), b.to_str().c_str());
+    cprintf("a, b, c: \n - %s\n - %s\n - %s\n", av.to_str().c_str(), bv.to_str().c_str(), cv.to_str().c_str());
+    cprintf("t, m, b: \n - %s\n - %s\n - %s\n", t.to_str().c_str(), m.to_str().c_str(), b.to_str().c_str());
 
     // dda_white(t, b);
     // dda_white(t, m);
@@ -407,6 +429,62 @@ struct Context {
     }
     
   }
+
+  // Draw a single triangle with information from the buffers at the corresponding indices.
+  // Assumes buffers are parallel, otherwise would need multi-dimensional element buffers to use, anyways.
+  void drawElementTriangle(int ai, int bi, int ci) {
+    auto read_poscol = [](LDVec pb, int pi, int psz, LDVec cb, int ci, int csz) {
+        PixVec result{0, 0, 0, 1, 0, 0, 0, 1, 0, 0};
+        for (int i = 0; i < psz; i++) result.p[i] = pb[pi+i];
+        for (int i = 0; i < csz; i++) result.p[i+4] = cb[ci+i];
+        return result;
+      };
+      LDVec& pb = pos_buffer, cb = color_buffer;
+      
+      int psz = pos_size;
+      int api = ai * psz;
+      int bpi = bi * psz;
+      int cpi = ci * psz;
+
+      int csz = color_size;
+      int aci = ai * csz;
+      int bci = bi * csz;
+      int cci = ci * csz;
+      
+      PixVec a = read_poscol(pb, api, psz, cb, aci, csz);
+      PixVec b = read_poscol(pb, bpi, psz, cb, bci, csz);
+      PixVec c = read_poscol(pb, cpi, psz, cb, cci, csz);
+      cprintf("Scanning triangle\n - %s\n - %s\n - %s\n",
+        pv_to_s(a).c_str(), 
+        pv_to_s(b).c_str(), 
+        pv_to_s(c).c_str());
+      scan(a, b, c);
+  }
+
+  void drawArraysTriangles(int first, int num_triangles) {
+    for (int t = 0; t < num_triangles; t++) {
+
+      int psz = pos_size;
+      int api = (first + t*3)*psz;
+      int bpi = api + psz;
+      int cpi = bpi + psz;
+
+      int csz = color_size;
+      int aci = (first + t*3)*csz;
+      int bci = aci + csz;
+      int cci = bci + csz;
+      
+      int ai = first + t*3, bi = ai + 1, ci = bi + 1;
+      drawElementTriangle(ai, bi, ci);
+    }
+  } 
+
+  void drawElementsTriangles(int count, int offset) {
+    for (int i = offset; i < count+offset; i+=3) {
+      IntVec& eb = element_buffer;
+      drawElementTriangle(eb[i], eb[i+1], eb[i+2]);
+    }
+  }
 };
 
 int main(int argc, char* argv[]) {
@@ -427,27 +505,37 @@ int main(int argc, char* argv[]) {
   Context gl{std::stoi(imgdef[1]), std::stoi(imgdef[2])};
   gl.filename = imgdef[3];
 
-  // for (int i = 0; i < commands.size(); i++) {
-  //   auto raw = raw_commands[i];
-  //   if (raw.empty()) continue;
-  //   printf("> '%s'\n", raw.c_str());
-  // }
-
+  bool break_early = false;
+  int draw_call_num = 0;
   for (int i = 1; i < commands.size(); i++) {
+    if (break_early) break;
     Command cmd = commands[i];
     std::string raw_command = raw_commands[i];
-    if (raw_command.empty()) continue;
+    if (raw_command.empty() || (raw_command[0] == 's' && raw_command[1] == '_')) continue;
 
 
     // printf("Running command '%s' with %lu args\n", cmd[0].c_str(), cmd.size()-1);
     std::cout << "==========" << std::endl << raw_command << std::endl;
-    printf("Running command: '%s'\n", raw_command.c_str());
-    
+    printf("Running command %d: '%s'\n", i, raw_command.c_str());
+
+    // if (i > 50 && i < 70) {
+    //   // Print specifically the middle triangle commands
+    //   gl.verbosity = 0;
+    // } else {
+    //   gl.verbosity = 4;
+    // }
+    gl.verbosity = 0;
+
     std::string name = cmd[0];
+
+
 
     switch (hash(name)) {
       case "#"_hash:{
         printf("Note: %s\n", raw_command.c_str());
+      break;}
+      case "break"_hash:{
+        break_early = true;
       break;}
       case "png"_hash:{
         std::cerr << "command 'png' should only be used at start of file";
@@ -462,64 +550,16 @@ int main(int argc, char* argv[]) {
         gl.color_size = std::stoi(cmd[1]);
         for (int i = 2; i < cmd.size(); i++) gl.color_buffer.push_back(std::stold(cmd[i]));
         break;}
-      // case "drawPixels"_hash:{
-      //   printf("Running draw pixel command with buffers of size %lu, %lu into image of dims %d, %d\n", gl.pos_buffer.size(), gl.color_buffer.size(), gl.img.width(), gl.img.height());
-      //   int num_pixels = std::stoi(cmd[1]);
-      //   for (int i = 0; i < num_pixels; i++) {
-      //     printf("Pushing pixel %d of %d\n", i, num_pixels);
-      //     int x = gl.pos_buffer[i*2+0], y = gl.pos_buffer[i*2+1];
-      //     // Image& img = gl.img;
-      //     Int8Vec& cb = gl.color_buffer;
-      //     int i4 = i*4;
-      //     gl.push_pixel(x, y, {cb[i4], cb[i4+1], cb[i4+2], cb[i4+3]});
-      //   } 
-      //   break;}
+      case "s_drawArraysTriangles"_hash:{
+        draw_call_num++;
+        gl.cprintf("Incrementing triangle #");
+      break;}
       case "drawArraysTriangles"_hash:{
         int start = std::stoi(cmd[1]);
         int num_tri = std::stoi(cmd[2]) / 3; // Assume multiple of 3 indices given
-        for (int t = 0; t < num_tri; t++) {
-          auto read_pos = [](LDVec pb, int i, int size) {
-            if (size == 2)
-              return Vec4{pb[i], pb[i+1]};
-            else if (size == 3)
-              return Vec4{pb[i], pb[i+1], pb[i+2]};
-            else // if (size == 4)
-              return Vec4{pb[i], pb[i+1], pb[i+2], pb[i+3]};
-          };
-
-          auto read_poscol = [](LDVec pb, int pi, int psz, LDVec cb, int ci, int csz) {
-            PixVec result{0, 0, 0, 1, 0, 0, 0, 1, 0, 0};
-            for (int i = 0; i < psz; i++) result.p[i] = pb[pi+i];
-            for (int i = 0; i < csz; i++) result.p[i+4] = cb[ci+i];
-            return result;
-          };
-
-          LDVec& pb = gl.pos_buffer, cb = gl.color_buffer;
-          // printf("Position buffer: [");
-          // for (ld p : pb) printf("\t%Le,\n", p);
-          // printf("]\n");
-          int psz = gl.pos_size;
-          int api = (start + t*3)*psz;
-          int bpi = api + psz;
-          int cpi = bpi + psz;
-
-          int csz = gl.color_size;
-          int aci = (start + t*3)*csz;
-          int bci = aci + csz;
-          int cci = bci + csz;
-
-
-          // // printf("Indexing into position array of size %d at indices %d, %d, %d\n", pb.size(), ai, bi, ci);
-          // Vec4 a = read_pos(pb, api, psz);
-          // Vec4 b = read_pos(pb, bpi, psz);
-          // Vec4 c = read_pos(pb, cpi, psz);
-
-          // gl.scan_white(a, b, c);
-          PixVec a = read_poscol(pb, api, psz, cb, aci, csz);
-          PixVec b = read_poscol(pb, bpi, psz, cb, bci, csz);
-          PixVec c = read_poscol(pb, cpi, psz, cb, cci, csz);
-          gl.scan(a, b, c);
-        }
+        
+        gl.drawArraysTriangles(start, num_tri);
+        draw_call_num++;
       break;}
       default:
         printf("Unknown action: %s\n", name.c_str());
