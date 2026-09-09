@@ -5,6 +5,7 @@
 #include <iostream>
 #include <fstream>
 #include <vector>
+#include <array>
 #include <span>
 #include <string.h>
 #include <bits/stdc++.h>
@@ -175,13 +176,10 @@ ld sRGB_to_lin(ld sRGB_val) {
 }
 
 // Convert float between 0 and 1 to 8 bit color val
-uint8_t ftobyte(ld float_val, bool gamma_correct) {
-  if (gamma_correct) {
-    float_val = lin_to_sRGB(float_val);
-  }
-  return floor(float_val * 255.0);
-  // return floor(clamp(float_val * 255.0, 0, 255.0));
+uint8_t ftobyte(ld float_val) {
+  return uint8_t(float_val * 255.0);
 }
+
 
 struct Context {
   
@@ -193,6 +191,7 @@ struct Context {
   IntVec element_buffer; // Indices of elements to draw
   FloatVec tc_buffer; //texture coords, always size 2
   FloatVec ps_buffer; //Point size
+  LDVec depth_buffer; //Depth at each texture coordinate
 
 
   //// State Flags
@@ -211,9 +210,16 @@ struct Context {
   Image img;
 
   //// Constructor 
-  Context(int width, int height) : img(Image(width, height)) {}
+  Context(int width, int height) : img(Image(width, height)) {
+    // Assign max depth (1)
+
+    depth_buffer.assign(width*height, 1);
+  }
 
   //// Methods
+
+  // Depth data (2d, to match image)
+  int tex_idx(int x, int y) {return img.width() * y + x;}
 
   // Print if specified level is above verbosity state
   template<typename... Args>
@@ -224,14 +230,6 @@ struct Context {
   template<typename... Args>
   void cprintf(const char *__restrict__ __format, Args&&... args) {
     cprintf(0, __format, std::forward<Args>(args)...);
-  }
-
-  // TODO: handling of this needs to be massively reworked
-  // Overload here bc it might be a state-based thing whether or not we gamma correct
-  uint8_t ftobyte_rgb(ld float_val) { 
-    uint8_t val = ::ftobyte(float_val, sRGB_convert);
-    // printf(" %Lf -> %u ", float_val, val);
-    return val;
   }
 
   // Assumes positions have already been divided by w
@@ -246,7 +244,7 @@ struct Context {
   PixVec div_w(const PixVec& pre_div) {
     PixVec target = pre_div / pre_div.w;
     target.w = 1 / pre_div.w;
-    for (int i = 4; i < PIX_SIZE; i++) target.p[i] = pre_div.p[i]; // FMSBL THEY WEREN'T W-CORRECTING THE COLORS
+    if (!hyp_interp) for (int i = 4; i < PIX_SIZE; i++) target.p[i] = pre_div.p[i]; // Only w-correct if they ask for it
     return target;
   }
 
@@ -254,7 +252,7 @@ struct Context {
   PixVec undiv_w(const PixVec& post_div) {
     PixVec target = div_w(post_div);
     for (int i = 0; i < 3; i++) target.p[i] = post_div.p[i];
-    for (int i = 4; i < PIX_SIZE; i++) target.p[i] = post_div.p[i];
+    if (!hyp_interp) for (int i = 4; i < PIX_SIZE; i++) target.p[i] = post_div.p[i];
     return target;
   }
 
@@ -268,14 +266,31 @@ struct Context {
     auto [x, y, z, w, r, g, b, a, s, t] = pixel.p;
     int xi = int(x);
     int yi = int(y);
-    if (
+  
+    if (!(
       xi >= 0 && xi < img.width() &&
-      yi >= 0 && yi < img.height()) {
-      cprintf("Pushing pixel at [%d, %d] from: %s \n", xi, yi, pv_to_s(pixel).c_str());
-      img[int(y)][int(x)] = {ftobyte_rgb(r), ftobyte_rgb(g), ftobyte_rgb(b), ftobyte(a, false)};
-    } else {
-      cprintf("Pixel at [%d, %d] rejected!\n", xi, yi);
+      yi >= 0 && yi < img.height()
+    )) {
+      cprintf("Pixel at [%d, %d] rejected for exceeding bounds [%d, %d]!\n", xi, yi, img.width(), img.height());
+      return;
     }
+
+    if (depth_enabled) {
+      int di = tex_idx(x, y);
+      cprintf("Old depth: %Le\n", depth_buffer.at(di));
+      ld old_z(depth_buffer.at(di));
+    
+      if (z > old_z) {
+        cprintf("Pixel at depth z=%Le rejected for being behind depth z=%Le\n", z, old_z);
+        return;
+      } else {
+        depth_buffer.at(di) = z;
+      }
+    }
+
+    cprintf("Pushing pixel at [%d, %d, %Le] from: %s \n", xi, yi, z, pv_to_s(pixel).c_str());
+    img[int(y)][int(x)] = {ftobyte(r), ftobyte(g), ftobyte(b), ftobyte(a)};
+  
   }
 
   void dda_white(const Vec2& a, const Vec2& b) {
@@ -488,6 +503,31 @@ struct Context {
       drawElementTriangle(eb[i], eb[i+1], eb[i+2]);
     }
   }
+
+  void renderDepthMap() {
+    for (int x = 0; x < img.width(); x++) {
+      for (int y = 0; y < img.height(); y++) {
+        int di = tex_idx(x, y);
+        float depth = float(depth_buffer[di]);
+        int depth_int = int(depth*255.0);
+        // if (di % 5 == 0) printf("Depth: %d (from float %e)\n", int(depth_int), depth);
+        img[y][x].r = depth_int;
+        img[y][x].g = depth_int;
+        img[y][x].b = depth_int;
+        img[y][x].a = 255;
+      }
+    }
+  }
+
+  void convert_sRGB() {
+    for (int x = 0; x < img.width(); x++) {
+      for (int y = 0; y < img.height(); y++) {
+        img[y][x].r = uint8_t(lin_to_sRGB(ld(img[y][x].r) / 255.0) * 255.0);
+        img[y][x].g = uint8_t(lin_to_sRGB(ld(img[y][x].g) / 255.0) * 255.0);
+        img[y][x].b = uint8_t(lin_to_sRGB(ld(img[y][x].b) / 255.0) * 255.0);
+      }
+    }
+  }
 };
 
 int main(int argc, char* argv[]) {
@@ -562,6 +602,18 @@ int main(int argc, char* argv[]) {
         
         gl.drawArraysTriangles(start, num_tri);
       break;}
+      case "depth"_hash:{
+        gl.depth_enabled = true;
+      break;}
+      case "sRGB"_hash:{
+        gl.sRGB_convert = true;
+      break;}
+      case "hyp"_hash:{
+        gl.hyp_interp = true;
+      break;}
+      case "frustum"_hash:{
+        gl.frustum_clipping = true;
+      break;}
       case "drawElementsTriangles"_hash:{
         int count = std::stoi(cmd[1]);
         int offset = std::stoi(cmd[2]);
@@ -573,6 +625,9 @@ int main(int argc, char* argv[]) {
     }
   }
 
+  // gl.renderDepthMap();
+
+  if (gl.sRGB_convert) gl.convert_sRGB();
 
   gl.img.save(gl.filename.c_str());
   printf("Image saved with dims %d by %d to output %s \n", gl.img.width(), gl.img.height(), gl.filename.c_str());
