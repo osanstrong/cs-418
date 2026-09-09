@@ -157,7 +157,6 @@ std::string pv_to_s(const PixVec& val) {
 
 ld lin_to_sRGB(ld lin_val) {
   // TODO: Can't tell if my correction is just off slihtly or there's a fundamental flaw
-  // return pow(lin_val, 1/2.2);
   ld threshold = 0.0031308;
   ld gamma = 2.4;
 
@@ -165,14 +164,20 @@ ld lin_to_sRGB(ld lin_val) {
   return 1.055 * pow(lin_val, 1/gamma) - 0.055;
 }
 
+ld lin_to_sRGB_old(ld lin_val) {
+  return pow(lin_val, 1/2.2);
+}
+
 ld sRGB_to_lin(ld sRGB_val) {
-  // return pow(sRGB_val, 2.;2);
   ld threshold = 0.04045;
   ld gamma = 2.4;
 
   if (sRGB_val <= threshold) return sRGB_val / 12.92;
   return pow((sRGB_val + 0.055) / 1.055, gamma);
-  // return sRGB_val;
+}
+
+ld sRGB_to_lin_old(ld sRGB_val) {
+  return pow(sRGB_val, 2.2);
 }
 
 // Convert float between 0 and 1 to 8 bit color val
@@ -292,40 +297,6 @@ struct Context {
     img[int(y)][int(x)] = {ftobyte(r), ftobyte(g), ftobyte(b), ftobyte(a)};
   
   }
-
-  void dda_white(const Vec2& a, const Vec2& b) {
-    // Just dda in y for now
-    Vec2 top = miny(a, b);
-    Vec2 bot = maxy(a, b);
-    if (top.y == bot.y) return;
-
-    Vec2 del = bot - top;
-    Vec2 s = del / del.y; // Delta scaled to unit y
-    ld e = ceil(top.y) - top.y; // To first integer
-    Vec2 o = s * e;
-
-    Vec2 p = top + o;
-    pixel_t white{255, 255, 255, 255};
-    while (p.y < bot.y) {
-      push_pixel(int(p.x), int(p.y), white);
-      p += s;
-    }
-  }
-
-  void row_white(ld ax, ld bx, int y) {
-    ld left = min(ax, bx);
-    ld right = max(ax, bx);
-    cprintf("Row at y=%d from %Lf to %Lf\n", y, left, right);
-    int x = ceil(left);
-    pixel_t white{255, 255, 255, 255};
-    // cprintf(" -> pushing at x of ");
-    while (x < right) {
-      push_pixel(x, y, white);
-      // cprintf("%d, ", x);
-      x++;
-    }
-    // cprintf("\n");
-  }
   
   // Assumes points a and b share the same y; Assumes in 1/w space
   void push_row(PixVec a, PixVec b) {
@@ -393,54 +364,6 @@ struct Context {
       push_row(p_m, p_b);
       p_m += s_m;
       p_b = p_b + s_b;
-    }
-    
-  }
-
-  void scan_white(const Vec4& aw, const Vec4& bw, const Vec4& cw) {
-    int width = img.width(), height = img.height();
-    Vec2 av = aw.viewport(width, height);
-    Vec2 bv = bw.viewport(width, height);
-    Vec2 cv = cw.viewport(width, height);
-
-    Vec2 t = miny(av, miny(bv, cv));
-    Vec2 b = maxy(av, maxy(bv, cv));
-    Vec2 m = (t != av && b != av)? av : ((t != bv && b != bv)? bv: cv);
-
-    cprintf("a, b, c: \n - %s\n - %s\n - %s\n", av.to_str().c_str(), bv.to_str().c_str(), cv.to_str().c_str());
-    cprintf("t, m, b: \n - %s\n - %s\n - %s\n", t.to_str().c_str(), m.to_str().c_str(), b.to_str().c_str());
-
-    // dda_white(t, b);
-    // dda_white(t, m);
-    // dda_white(m, b);
-
-    if (t.y == b.y) return;
-    Vec2 del_b = b - t;
-    Vec2 s_b = del_b / del_b.y;
-    ld e = ceil(t.y) - t.y;
-    Vec2 o_b = s_b * e;
-    Vec2 p_b = t + o_b;
-
-    Vec2 del_m = m - t;
-    Vec2 s_m = del_m / del_m.y;
-    Vec2 o_m = s_m * e;
-    Vec2 p_m = t + o_m;
-
-    while (p_m.y < m.y) {
-      row_white(p_m.x, p_b.x, p_m.y);
-      p_m += s_m;
-      p_b += s_b;
-    }
-    del_m = b - m;
-    s_m = del_m / del_m.y;
-    e = ceil(m.y) - m.y;
-    o_m = s_m * e;
-    p_m = m + o_m;
-    
-    while (p_m.y < b.y) {
-      row_white(p_m.x, p_b.x, p_m.y);
-      p_m += s_m;
-      p_b += s_b;
     }
     
   }
