@@ -136,6 +136,10 @@ bool operator==(const PixVec& lhs, const PixVec& rhs) {
 
 bool operator!=(const PixVec& lhs, const PixVec& rhs) { return !(lhs == rhs); }
 
+ld cross2d(PixVec a, PixVec b) {
+  return a.x*b.y - a.y*b.x;
+}
+
 // PixVec which minimize/maximize the target component
 PixVec argmax(const PixVec& a, const PixVec& b, int i) {
   if (a.p[i] > b.p[i]) return a; else return b;
@@ -326,6 +330,11 @@ struct Context {
     PixVec av = viewport(div_w(a_undiv));
     PixVec bv = viewport(div_w(b_undiv));
     PixVec cv = viewport(div_w(c_undiv));
+
+    if (cull_backface && cross2d(bv-av, bv-cv) <= 0) {
+      cprintf("Backface triangle rejected");
+      return;
+    } 
     
     PixVec t = miny(av, miny(bv, cv));
     PixVec b = maxy(av, maxy(bv, cv));
@@ -536,6 +545,9 @@ int main(int argc, char* argv[]) {
       break;}
       case "frustum"_hash:{
         gl.frustum_clipping = true;
+      break;}
+      case "cull"_hash:{
+        gl.cull_backface = true;
       break;}
       case "drawElementsTriangles"_hash:{
         int count = std::stoi(cmd[1]);
