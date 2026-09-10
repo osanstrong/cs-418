@@ -1,6 +1,7 @@
 #include "./uselibpng.h"
 #include "./argparse.hpp"
 
+#include <cassert>
 #include <stdio.h>
 #include <iostream>
 #include <fstream>
@@ -152,6 +153,20 @@ PixVec minx(const PixVec& a, const PixVec& b) {return argmin(a, b, 0);}
 PixVec maxy(const PixVec& a, const PixVec& b) {return argmax(a, b, 1);}
 PixVec miny(const PixVec& a, const PixVec& b) {return argmin(a, b, 1);}
 
+// Blend b on top of a, both rgba 8888 bit
+pixel_t alpha_blend(pixel_t a, pixel_t b) {
+  pixel_t res;
+  ld t = ld(b.a) / 255.0;
+  // printf("Using src opacity: %Le, from 8-bit value %d\n", t, b.a);
+  for (int i = 0; i < 3; i++) {
+    res.p[i] = uint8_t(ld(a.p[i])*(1-t) + ld(b.p[i])*t);
+    // printf(" - %d: went %Le from %d to %d, ending at %d\n", i, t, a.p[i], b.p[i], res.p[i]);
+  }
+  ld dst_a = ld(a.a) / 255.0;
+  res.a = a.a + (1 - dst_a)*b.a;
+  return res;
+}
+
 std::string pv_to_s(const PixVec& val) {
   std::string result = "< ";
   for (int i = 0; i < PIX_SIZE-1; i++) result += std::to_string(val.p[i]) + ", ";
@@ -265,11 +280,6 @@ struct Context {
     return target;
   }
 
-
-
-  void push_pixel(int x, int y, const pixel_t& color) {
-    img[y][x] = color;
-  }
   // Equivalent of fragment logic; assumes pixel is fully undivided by w
   void push_pixel(PixVec pixel) {
     auto [x, y, z, w, r, g, b, a, s, t] = pixel.p;
@@ -298,7 +308,9 @@ struct Context {
     }
 
     cprintf("Pushing pixel at [%d, %d, %Le] from: %s \n", xi, yi, z, pv_to_s(pixel).c_str());
-    img[int(y)][int(x)] = {ftobyte(r), ftobyte(g), ftobyte(b), ftobyte(a)};
+    pixel_t new_pix{ftobyte(r), ftobyte(g), ftobyte(b), ftobyte(a)};
+    pixel_t old_pix = img[int(y)][int(x)];
+    img[int(y)][int(x)] = alpha_blend(old_pix, new_pix);
   
   }
   
@@ -306,6 +318,7 @@ struct Context {
   void push_row(PixVec a, PixVec b) {
     PixVec left = argmin(a, b, 0);
     PixVec right = argmax(a, b, 0);
+    assert(left.x <= right.x);
     // int y = a.y;
     PixVec left_w = undiv_w(left), right_w = undiv_w(right);
 
@@ -340,6 +353,10 @@ struct Context {
     PixVec b = maxy(av, maxy(bv, cv));
     PixVec m = (t != av && b != av)? av : ((t != bv && b != bv)? bv: cv);
 
+    assert(t.y <= m.y);
+    assert(b.y >= m.y);
+    assert(b.y >= t.y);
+
 
     
     
@@ -355,24 +372,36 @@ struct Context {
     PixVec o_m = s_m * e;
     PixVec p_m = t + o_m;
     cprintf("Initialized DDA sweep\n");
-
-    while (p_m.y < m.y) {
+    
+    int row = 0;
+    int row_mod = 1; // every {row_mod}, actually push that row to screen (debug)
+    
+    
+    while (floor(p_m.y) < floor(m.y)) {
+      p_m = p_m + s_m;
+      p_b = p_b + s_b;
+      row++;
+      if (row % row_mod != 0) continue;
       cprintf("Pushing a row!\n");
       push_row(p_m, p_b);
-      p_m += s_m;
-      p_b = p_b + s_b;
     }
+    cprintf(2, "Ending p_m.y: %Le vs m.y: %Le\n", p_m.y, m.y);
     del_m = b - m;
     s_m = del_m / del_m.y;
     e = ceil(m.y) - m.y;
     o_m = s_m * e;
     p_m = m + o_m;
     
-    while (p_m.y < b.y) {
+    // // Skip one row??
+    // p_m = p_m + s_m;
+    // p_b = p_b + s_b;
+    while (floor(p_m.y) < floor(b.y)) {
+      p_m = p_m + s_m;
+      p_b = p_b + s_b;
+      row++;
+      if (row % row_mod != 0) continue;
       cprintf("Pushing a row!\n");
       push_row(p_m, p_b);
-      p_m += s_m;
-      p_b = p_b + s_b;
     }
     
   }
