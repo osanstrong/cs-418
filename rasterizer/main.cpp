@@ -216,7 +216,7 @@ struct Context {
   LDVec pos_buffer;
   int pos_size; // Either 2, 3, or 4
   IntVec element_buffer; // Indices of elements to draw
-  FloatVec tc_buffer; //texture coords, always size 2
+  LDVec tc_buffer; //texture coords, always size 2
   FloatVec ps_buffer; //Point size
   LDVec depth_buffer; //Depth at each texture coordinate
 
@@ -230,12 +230,14 @@ struct Context {
   bool decals = false; // debug to include vertex colors behind transparent texture samples
   bool frustum_clipping = false; 
   bool blend_alpha = false;
+  bool texture_bound = false;
 
   int verbosity = 0; // Inverse; 0 means print everything, higher restricts to more and more important things
 
   //// Uniforms
   std::string filename;
   Image img;
+  Image* tex = nullptr;
 
   //// Constructor 
   Context(int width, int height) : img(Image(width, height)) {
@@ -244,10 +246,39 @@ struct Context {
     depth_buffer.assign(width*height, 1);
   }
 
+  //// Destructor 
+  ~Context() {
+    if (texture_bound) delete tex;
+  }
+
   //// Methods
 
+  // Bind a texture (only allow 1 to be bound at a time)
+  // Bind using path so that this manages the pointer to the actual object
+  void bind_texture(const char* filepath, bool sRGB = true) {
+    if (texture_bound) delete tex;
+    tex = new Image(filepath);
+    cprintf("First color red visible: %d \n", (*tex)[0][0].r);
+    cprintf("Texture bound with dimensions %d, %d!\n", tex->width(), tex->height());
+    texture_bound = true;
+
+    if (sRGB) {
+      //If the texture is stored in sRGB, which we are to assume they are, convert to linear
+      for (int x = 0; x < tex->width(); x++) {
+        for (int y = 0; y < tex->height(); y++) {
+          pixel_t input_color = (*tex)[y][x];
+          for (int i = 0; i < 3; i++) {
+            (*tex)[y][x].p[i] = int(sRGB_to_lin(ld(input_color.p[i]) / 255.0) * 255.0);
+          }
+        }
+      }
+
+    }
+  }
+
+
   // Depth data (2d, to match image)
-  int tex_idx(int x, int y) {return img.width() * y + x;}
+  int depth_idx(int x, int y) {return img.width() * y + x;}
 
   // Print if specified level is above verbosity state
   template<typename... Args>
@@ -304,7 +335,7 @@ struct Context {
     }
 
     if (depth_enabled) {
-      int di = tex_idx(x, y);
+      int di = depth_idx(x, y);
       cprintf("Old depth: %Le\n", depth_buffer.at(di));
       ld old_z(depth_buffer.at(di));
     
@@ -316,8 +347,27 @@ struct Context {
       }
     }
 
+    
+    pixel_t new_pix;
+
     cprintf("Pushing pixel at [%d, %d, %Le] from: %s \n", xi, yi, z, pv_to_s(pixel).c_str());
-    pixel_t new_pix{ftobyte(r), ftobyte(g), ftobyte(b), ftobyte(a)};
+    if (texture_bound) {
+      // If a texture has been bound, follow special pushing instructions instead
+      // new_pix = {ftobyte(s), ftobyte(t), 255, 255};
+      int wid = tex->width();
+      int hei = tex->height();
+      int tex_x = (int(s*wid) % wid + wid) % wid; // Wrap twice bc modulo of negatives remains negative
+      int tex_y = (int(t*hei) % hei + hei) % hei;
+
+      new_pix.r = tex_x;
+      new_pix.g = tex_y;
+      
+      new_pix = pixel_t((*tex)[tex_y][tex_x]);
+      new_pix.a = 255;
+
+    } else {
+      new_pix = {ftobyte(r), ftobyte(g), ftobyte(b), ftobyte(a)};
+    }
     
     if (blend_alpha) {
       pixel_t old_pix = img[int(y)][int(x)];
@@ -421,13 +471,20 @@ struct Context {
   // Draw a single triangle with information from the buffers at the corresponding indices.
   // Assumes buffers are parallel, otherwise would need multi-dimensional element buffers to use, anyways.
   void drawElementTriangle(int ai, int bi, int ci) {
-    auto read_poscol = [](LDVec pb, int pi, int psz, LDVec cb, int ci, int csz) {
+    auto read_poscol = [](int i, LDVec pb, int psz, LDVec cb, int csz, bool texture_bound, LDVec tcb) {
+        int pi = i * psz;
+        int ci = i * csz;
         PixVec result{0, 0, 0, 1, 0, 0, 0, 1, 0, 0};
-        for (int i = 0; i < psz; i++) result.p[i] = pb[pi+i];
-        for (int i = 0; i < csz; i++) result.p[i+4] = cb[ci+i];
+        for (int i = 0; i < psz; i++) result.p[i] = pb.at(pi+i);
+        for (int i = 0; i < csz; i++) result.p[i+4] = cb.at(ci+i);
+        if (texture_bound) {
+          int tci = i * 2;
+          result.p[8] = tcb.at(tci);
+          result.p[9] = tcb.at(tci+1);
+        }
         return result;
       };
-    LDVec& pb = pos_buffer, cb = color_buffer;
+    LDVec& pb = pos_buffer, cb = color_buffer, tcb = tc_buffer;
     
     int psz = pos_size;
     int api = ai * psz;
@@ -440,9 +497,9 @@ struct Context {
     int cci = ci * csz;
     cprintf("Checking out indices %d, %d, %d\n -> %d, %d, %d\n -> %d, %d, %d\n", ai, bi, ci, api, bpi, cpi, aci, bci, cci);
     
-    PixVec a = read_poscol(pb, api, psz, cb, aci, csz);
-    PixVec b = read_poscol(pb, bpi, psz, cb, bci, csz);
-    PixVec c = read_poscol(pb, cpi, psz, cb, cci, csz);
+    PixVec a = read_poscol(ai, pb, psz, cb, csz, texture_bound, tcb);
+    PixVec b = read_poscol(bi, pb, psz, cb, csz, texture_bound, tcb);
+    PixVec c = read_poscol(ci, pb, psz, cb, csz, texture_bound, tcb);
     cprintf("Scanning triangle\n - %s\n - %s\n - %s\n",
       pv_to_s(a).c_str(), 
       pv_to_s(b).c_str(), 
@@ -480,7 +537,7 @@ struct Context {
   void renderDepthMap() {
     for (int x = 0; x < img.width(); x++) {
       for (int y = 0; y < img.height(); y++) {
-        int di = tex_idx(x, y);
+        int di = depth_idx(x, y);
         float depth = float(depth_buffer[di]);
         int depth_int = int(depth*255.0);
         // if (di % 5 == 0) printf("Depth: %d (from float %e)\n", int(depth_int), depth);
@@ -520,6 +577,8 @@ int main(int argc, char* argv[]) {
   Command imgdef = commands.front(); // Assume first command is initializing the image
   Context gl{std::stoi(imgdef[1]), std::stoi(imgdef[2])};
   gl.filename = imgdef[3];
+
+  std::string file_prefix = "";
 
   bool break_early = false;
   for (int i = 1; i < commands.size(); i++) {
@@ -570,6 +629,17 @@ int main(int argc, char* argv[]) {
         gl.element_buffer.clear();
         for (int i = 1; i < cmd.size(); i++) gl.element_buffer.push_back(std::stoi(cmd[i]));
       break;}
+      case "texcoord"_hash:{
+        // Should always be texcoord 2
+        gl.tc_buffer.clear();
+        for (int i = 2; i < cmd.size(); i++) gl.tc_buffer.push_back(std::stold(cmd[i]));
+        // Allowable inputs include not entering any color info, so fill placeholder color if necessary
+        if (gl.color_buffer.size() == 0) {
+          int num_points = gl.tc_buffer.size() / 2;
+          gl.color_size = 3;
+          gl.color_buffer.assign(3*num_points, 1);
+        }
+      break;}
       case "drawArraysTriangles"_hash:{
         int start = std::stoi(cmd[1]);
         int num_tri = std::stoi(cmd[2]) / 3; // Assume multiple of 3 indices given
@@ -590,6 +660,13 @@ int main(int argc, char* argv[]) {
       break;}
       case "cull"_hash:{
         gl.cull_backface = true;
+      break;}
+      case "relpath"_hash:{
+        file_prefix = cmd[1];
+      break;}
+      case "texture"_hash:{
+        std::string fullpath = file_prefix + cmd[1];
+        gl.bind_texture(fullpath.c_str());
       break;}
       case "drawElementsTriangles"_hash:{
         int count = std::stoi(cmd[1]);
