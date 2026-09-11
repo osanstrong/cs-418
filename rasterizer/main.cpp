@@ -192,7 +192,8 @@ ld lin_to_sRGB_old(ld lin_val) {
 }
 
 ld lin_to_sRGB(ld lin_val) {
-  return lin_to_sRGB_old(lin_val);
+  // return lin_val;
+  return lin_to_sRGB_new(lin_val);
 }
 
 ld sRGB_to_lin_new(ld sRGB_val) {
@@ -208,7 +209,8 @@ ld sRGB_to_lin_old(ld sRGB_val) {
 }
 
 ld sRGB_to_lin(ld sRGB_val) {
-  return sRGB_to_lin_old(sRGB_val);
+  // return sRGB_val;
+  return sRGB_to_lin_new(sRGB_val);
 }
 
 // Convert float between 0 and 1 to 8 bit color val
