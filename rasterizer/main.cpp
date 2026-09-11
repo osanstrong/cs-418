@@ -177,7 +177,8 @@ pixel_t alpha_blend(pixel_t dst, pixel_t src) {
   return res;
 }
 
-ld lin_to_sRGB(ld lin_val) {
+
+ld lin_to_sRGB_new(ld lin_val) {
   // TODO: Can't tell if my correction is just off slihtly or there's a fundamental flaw
   ld threshold = 0.0031308;
   ld gamma = 2.4;
@@ -190,7 +191,11 @@ ld lin_to_sRGB_old(ld lin_val) {
   return pow(lin_val, 1/2.2);
 }
 
-ld sRGB_to_lin(ld sRGB_val) {
+ld lin_to_sRGB(ld lin_val) {
+  return lin_to_sRGB_old(lin_val);
+}
+
+ld sRGB_to_lin_new(ld sRGB_val) {
   ld threshold = 0.04045;
   ld gamma = 2.4;
 
@@ -200,6 +205,10 @@ ld sRGB_to_lin(ld sRGB_val) {
 
 ld sRGB_to_lin_old(ld sRGB_val) {
   return pow(sRGB_val, 2.2);
+}
+
+ld sRGB_to_lin(ld sRGB_val) {
+  return sRGB_to_lin_old(sRGB_val);
 }
 
 // Convert float between 0 and 1 to 8 bit color val
