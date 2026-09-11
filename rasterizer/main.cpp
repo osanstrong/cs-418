@@ -159,6 +159,24 @@ std::string pv_to_s(const PixVec& val) {
   return result;
 }
 
+// Blend b on top of a, both rgba 8888 bit
+pixel_t alpha_blend(pixel_t dst, pixel_t src) {
+  pixel_t res;
+  ld src_a = ld(src.a) / 255.0;
+  ld dst_a = ld(dst.a) / 255.0;
+
+  ld res_a = src_a + dst_a*(1-src_a);
+  // printf("Using src opacity: %Le, from 8-bit value %d\n", t, b.a);
+  for (int i = 0; i < 3; i++) {
+    res.p[i] = uint8_t(
+      (src_a/res_a)*src.p[i] + ((1-src_a)*dst_a/res_a)*dst.p[i]
+    );
+    // printf(" - %d: went %Le from %d to %d, ending at %d\n", i, t, a.p[i], b.p[i], res.p[i]);
+  }
+  res.a = uint8_t(res_a*255);
+  return res;
+}
+
 ld lin_to_sRGB(ld lin_val) {
   // TODO: Can't tell if my correction is just off slihtly or there's a fundamental flaw
   ld threshold = 0.0031308;
@@ -211,6 +229,7 @@ struct Context {
   bool cull_backface = false;
   bool decals = false; // debug to include vertex colors behind transparent texture samples
   bool frustum_clipping = false; 
+  bool blend_alpha = false;
 
   int verbosity = 0; // Inverse; 0 means print everything, higher restricts to more and more important things
 
@@ -298,8 +317,14 @@ struct Context {
     }
 
     cprintf("Pushing pixel at [%d, %d, %Le] from: %s \n", xi, yi, z, pv_to_s(pixel).c_str());
-    img[int(y)][int(x)] = {ftobyte(r), ftobyte(g), ftobyte(b), ftobyte(a)};
-  
+    pixel_t new_pix{ftobyte(r), ftobyte(g), ftobyte(b), ftobyte(a)};
+    
+    if (blend_alpha) {
+      pixel_t old_pix = img[int(y)][int(x)];
+      img[int(y)][int(x)] = alpha_blend(old_pix, new_pix);
+    } else {
+      img[int(y)][int(x)] = new_pix;
+    }
   }
   
   // Assumes points a and b share the same y; Assumes in 1/w space
@@ -499,6 +524,7 @@ int main(int argc, char* argv[]) {
     //   gl.verbosity = 4;
     // }
     gl.verbosity = 0;
+    gl.blend_alpha = true;
 
     std::string name = cmd[0];
 
