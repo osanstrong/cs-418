@@ -369,35 +369,51 @@ struct Context {
     
     
     if (t.y == b.y) return;
-    PixVec del_b = b - t;
-    PixVec s_b = del_b / del_b.y;
+    PixVec del_l = b - t;
+    PixVec s_l = del_l / del_l.y;
     ld e = ceil(t.y) - t.y;
-    PixVec o_b = s_b * e;
-    PixVec p_b = t + o_b;
+    PixVec o_l = s_l * e;
+    PixVec p_l = t + o_l;
 
     PixVec del_m = m - t;
     PixVec s_m = del_m / del_m.y;
     PixVec o_m = s_m * e;
     PixVec p_m = t + o_m;
-    cprintf("Initialized DDA sweep\n");
 
-    while (p_m.y < m.y) {
-      cprintf("Pushing a row!\n");
-      push_row(p_m, p_b);
-      p_m += s_m;
-      p_b = p_b + s_b;
+    int push_freq = 1; //push every {push_freq} rows. (1 means push every row)
+    int push_num = 0;
+    cprintf("Initialized DDA sweep with frequency %d\n", push_freq);
+
+
+    verbosity = 1;
+    while ((p_m.y) < (m.y)) {
+      if (push_num % push_freq == 0) {
+        cprintf(1, "Pushing row %d at y = %Le (%Le)!\n", push_num, p_m.y, p_l.y);
+        push_row(p_m, p_l);
+      }
+
+      p_m = p_m + s_m;
+      p_l = p_l + s_l;
+      push_num++;
     }
     del_m = b - m;
     s_m = del_m / del_m.y;
-    e = ceil(m.y) - m.y;
+    // e = ceil(m.y) - m.y;
+    e = p_l.y - m.y;
+
     o_m = s_m * e;
     p_m = m + o_m;
     
-    while (p_m.y < b.y) {
-      cprintf("Pushing a row!\n");
-      push_row(p_m, p_b);
-      p_m += s_m;
-      p_b = p_b + s_b;
+    while (p_m.y < (b.y)) {
+      if (push_num % push_freq == 0) {
+        cprintf(1, "Pushing row %d at y = %Le (%Le)!\n", push_num, p_m.y, p_l.y);
+        push_row(p_m, p_l);
+      }
+
+
+      p_m = p_m + s_m;
+      p_l = p_l + s_l;
+      push_num++;
     }
     
   }
