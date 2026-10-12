@@ -72,12 +72,6 @@ function get_I_dims() {
     return [7, 12]
 }
 class Buffers{
-    // Just here for data stashing
-    // static tet_attrib = null;
-    // static tet_idx = null;
-    // static oct_attrib = null;
-    // static oct_idx = null;
-
     static shape_attrib = null;
     static shape_idx = null
     static tet_offset = 0
@@ -86,38 +80,14 @@ class Buffers{
     static oct_length = 3*8
 
     static load_buffers(gl) {
-    
-        // Buffers.tet_attrib = gl.createBuffer();
-        // Buffers.tet_idx = gl.createBuffer();
-        // gl.bindBuffer(gl.ARRAY_BUFFER, Buffers.tet_attrib)
-        // var tet_attribs = Buffers.float_stitch(Tet.attrib_order);
-        // console.log(tet_attribs);
-        // gl.bufferData(gl.ARRAY_BUFFER, tet_attribs, gl.STATIC_DRAW)
-        // gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, Buffers.tet_idx);
-        // gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, Buffers.int_stitch([Tet.tri_indices]), gl.STATIC_DRAW);
-
-        // Buffers.oct_attrib = gl.createBuffer();
-        // Buffers.oct_idx = gl.createBuffer();
-        // gl.bindBuffer(gl.ARRAY_BUFFER, Buffers.oct_attrib)
-        // gl.bufferData(gl.ARRAY_BUFFER, Buffers.float_stitch(Oct.attrib_order), gl.STATIC_DRAW)
-        // gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, Buffers.oct_idx);
-        // gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, Buffers.int_stitch([Oct.tri_indices]), gl.STATIC_DRAW);
         Buffers.shape_attrib = gl.createBuffer();
         gl.bindBuffer(gl.ARRAY_BUFFER, Buffers.shape_attrib)
         gl.bufferData(gl.ARRAY_BUFFER, 
-        //     Buffers.concat_floats([
-        //     Buffers.float_stitch(Tet.attrib_order),
-        //     Buffers.float_stitch(Oct.attrib_order)
-        // ]), 
         Buffers.float_stitch(Shape.attrib_order),
         gl.STATIC_DRAW)
         Buffers.shape_idx = gl.createBuffer();
         gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, Buffers.shape_idx)
         gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, 
-        //     Buffers.concat_ints([
-        //     Buffers.int_stitch([Tet.tri_indices]),
-        //     Buffers.int_stitch([Oct.tri_indices])
-        // ]), 
         Buffers.int_stitch([Shape.tri_indices]),
         gl.STATIC_DRAW)
     }
@@ -170,15 +140,6 @@ class Oct{
     static attrib_order = [Oct.positions, Oct.colors]
 }
 class Shape{
-    // static positions = [[1,1,1], [-1,-1,1], [-1,1,-1], [1,-1,-1],
-    //                     [1,0,0],[0,1,0],[0,0,1],[0,-1,0],[0,0,-1],[-1,0,0]]
-
-    // static colors = [[1,1,1], [0,0,1], [0,1,0], [1,0,0],
-    //                 [1,0.5,0.5],[0.5,1,0.5],[0.5,0.5,1],[0.5,0,0.5],[0.5,0.5,0],[0,0.5,0.5]]
-    // // static tri_indices = [[0,1,2], [0,2,3], [0,3,1], [1,2,3]].push(
-    // //     ...Shape.shift([[0,1,2], [0,2,3], [0,3,4], [0,4,1], [5,1,4], [5,4,3], [5,3,2], [5,2,1]], 4))
-    // static tri_indices = [...[[0,1,2], [0,2,3], [0,3,1], [1,2,3]],
-    //     ...Shape.shift([[0,1,2], [0,2,3], [0,3,4], [0,4,1], [5,1,4], [5,4,3], [5,3,2], [5,2,1]], 4)]
     static positions = [...Tet.positions, ...Oct.positions]
     static colors = [...Tet.colors, ...Oct.colors]
     static tri_indices = [...Tet.tri_indices, ...Shape.shift(Oct.tri_indices, 4)]
@@ -243,61 +204,36 @@ function compile(vs_source, fs_source) {
     }
     program.uniforms = uniforms
 
+
+
     // Generate static parts of the geometry
-
-    // const [positions, indices] = make_I()
-    // Buffers.posBuffer = gl.createBuffer();
-    // // const positionBuffer = gl.createBuffer();
-    // gl.bindBuffer(gl.ARRAY_BUFFER, Buffers.posBuffer);
-    // gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(positions), gl.STATIC_DRAW);
-
-    // Buffers.newPosBuffer = gl.createBuffer();
-    // gl.bindBuffer(gl.ARRAY_BUFFER, Buffers.newPosBuffer);
-    // Consts.raw_I_brokenverts[1] = -10;
-    // console.log(Buffers.newPosBuffer)
-    // gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(Consts.raw_I_brokenverts), gl.STATIC_DRAW);
-
-    // gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
-    
-    
-    // Buffers.indexBuffer = gl.createBuffer();
-    // gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, Buffers.indexBuffer);
-    // gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Int16Array(indices), gl.STATIC_DRAW);
-    
-    // gl.bindBuffer(gl.ARRAY_BUFFER, Buffers.newPosBuffer);
-    // gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, Buffers.indexBuffer);
     
     Buffers.load_buffers(gl);
-    
 
-    // for (const buffer of [Buffers.tet_attrib, Buffers.oct_attrib]) {
-        // gl.bindBuffer(gl.ARRAY_BUFFER, buffer)
-        // gl.bindBuffer(gl.ARRAY_BUFFER, Buffers.shape_attrib)
-        const float_size = 4;
-        const vert_size = 6*float_size;
-        const positionLoc = 0;
-        gl.enableVertexAttribArray(positionLoc)
-        // Tell the attribute how to get data out of positionBuffer (ARRAY_BUFFER)
-        var size = 3;          // 2 components per iteration
-        var type = gl.FLOAT;   // the data is 32bit floats
-        var normalize = false; // don't normalize the data
-        var stride = vert_size;        // go this many bytes;     0 = move forward size * sizeof(type) each iteration to get the next position
-        var buffer_offset = 0;        // start at the beginning of the buffer
-        gl.vertexAttribPointer(
-            positionLoc, size, type, normalize, stride, buffer_offset)
-        const colorLoc = 1;
-        gl.enableVertexAttribArray(colorLoc)
-        // Tell the attribute how to get data out of positionBuffer (ARRAY_BUFFER)
-        var size = 3;          // 1 component per iteration
-        // var type = gl.FLOAT;   // the data is 32bit floats
-        // var normalize = false; // don't normalize the data
-        var stride = vert_size;        // go this many bytes; 0 = move forward size * sizeof(type) each iteration to get the next position
-        var buffer_offset = 3*float_size;        // start 1*4 from the beginning of the buffer
-        gl.vertexAttribPointer(
-            colorLoc, size, type, normalize, stride, buffer_offset)
+    const float_size = 4;
+    const vert_size = 6*float_size;
+    const positionLoc = 0;
+    gl.enableVertexAttribArray(positionLoc)
+    // Tell the attribute how to get data out of positionBuffer (ARRAY_BUFFER)
+    var size = 3;          // 2 components per iteration
+    var type = gl.FLOAT;   // the data is 32bit floats
+    var normalize = false; // don't normalize the data
+    var stride = vert_size;        // go this many bytes;     0 = move forward size * sizeof(type) each iteration to get the next position
+    var buffer_offset = 0;        // start at the beginning of the buffer
+    gl.vertexAttribPointer(
+        positionLoc, size, type, normalize, stride, buffer_offset)
+    const colorLoc = 1;
+    gl.enableVertexAttribArray(colorLoc)
+    // Tell the attribute how to get data out of positionBuffer (ARRAY_BUFFER)
+    var size = 3;          // 1 component per iteration
+    // var type = gl.FLOAT;   // the data is 32bit floats
+    // var normalize = false; // don't normalize the data
+    var stride = vert_size;        // go this many bytes; 0 = move forward size * sizeof(type) each iteration to get the next position
+    var buffer_offset = 3*float_size;        // start 1*4 from the beginning of the buffer
+    gl.vertexAttribPointer(
+        colorLoc, size, type, normalize, stride, buffer_offset)
 
-        return program
-    // }
+    return program
 }
 
 
@@ -316,39 +252,6 @@ function draw(seconds) {
     gl.uniform1f(program.uniforms.seconds, seconds)
     gl.uniform1i(program.uniforms.count, count)
 
-
-    // var [width, height] = get_I_dims() // scale to maintain aspect ratio but so that all dimensions fit within [-1, 1]
-    // var max_dim = Math.max(width, height)
-    // var extent = 0.3;
-    // var vp_scale = m4scale(2*extent/max_dim, 2*extent/max_dim, 1)
-    // var vp_shift = m4trans(-1, -1)
-    // // var vp_tf = m4mul(vp_shift, vp_scale)
-    // var scale = 0.1
-    // var vp_tf = m4scale(scale, scale, scale)
-    
-    // // var vp_tf = m4trans(0, 0, 0)
-
-
-    // var rot = m4rotZ(seconds*5)
-    // var rot2 = m4rotX(seconds*5)
-    // rot = m4mul(rot2, rot)
-    // var pos_delta = [0.2, 0.2]
-    // var position = m4trans(Math.cos(seconds*3)*pos_delta[0], Math.sin(seconds*2 - 0.1)*pos_delta[1], 0)
-    // var scale_factor = (Math.sin(seconds*2)**2)*0.6+1;
-    // var scale = m4scale(scale_factor, scale_factor, 1)
-
-    // var proj = m4mul(position, m4mul(rot, m4mul(position, m4mul(scale, vp_tf))))
-    // var proj = m4listmul([position, rot, position, scale, vp_tf])
-
-    // proj = m4mul(m4trans(0, 0, -0.5), proj) //Move this sucker away from the camera; as a stopgap rn instead of actually having a full camera position simulation
-    // proj = m4mul(p, proj) //Apply projection at the end of all transformation
-    // gl.uniformMatrix4fv(program.uniforms.proj, false, proj)
-
-    
-    // gl.bindBuffer(gl.ARRAY_BUFFER, Buffers.oct_attrib)
-    // gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, Buffers.oct_idx)
-    // const sizeInBytes = gl.getBufferParameter(gl.ELEMENT_ARRAY_BUFFER, gl.BUFFER_SIZE);
-    // console.log(`Index buffer size: ${sizeInBytes} bytes`);
 
     const TET = 0;
     const OCT = 1;
@@ -464,27 +367,6 @@ function draw(seconds) {
         gl.drawElements(connection, length, idx_type, offset*2);
     }
 
-
-    
-
-    // const length = oct_length
-
-
-    // 1. Create a destination typed array matching the expected data type and size
-    // const outputData = new Float32Array(36); 
-
-    // 2. Bind the target buffer you want to read from
-    // gl.bindBuffer(gl.ARRAY_BUFFER, Buffers.shape_attrib);
-
-    // 3. Read the data back from GPU to CPU
-    // getBufferSubData(target, srcByteOffset, dstData)
-    // gl.getBufferSubData(gl.ARRAY_BUFFER, 0, outputData);
-
-    const intOutData = new Int16Array(length);
-    // gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, Buffers.tet_idx);
-    // gl.getBufferSubData(gl.ELEMENT_ARRAY_BUFFER, 0, intOutData);
-    // console.log(outputData)
-    // console.log(intOutData)
 }
 
 /**
