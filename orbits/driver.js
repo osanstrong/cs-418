@@ -369,11 +369,11 @@ function draw(seconds) {
     mats.push(sun_mat)
 
 
-    const earth_rotrate = 2*pi * 2.1 // "Several" times a second 
+    const earth_rotrate = 2*pi * 1.1 // "Several" times a second, i.e. 1.1 + 2 = 3.1, any more felt WAY too fast to watch
     const earth_rot = m4rotY(earth_rotrate*seconds)
     const earth_size = 0.04
     const earth_scale = m4uscale(earth_size)
-    const earth_orbdist = 0.35
+    const earth_orbdist = 0.25
     const earth_orbrate = 2*pi / 3.5 // Once every "few" seconds
     // const earth_orbit = m4mul(m4rotY(seconds*earth_orbrate), m4trans(earth_orbdist, 0, 0))
     const earth_orbit = m4rotY(seconds*earth_orbrate)
@@ -384,12 +384,44 @@ function draw(seconds) {
     items.push(OCT)
     mats.push(earth_mat)
 
-    const moon_scale = m4uscale(0.4*earth_size)
-    const moon_orbdist = 0.15
+    const moon_scale = m4uscale(0.24*earth_size)
+    const moon_orbdist = 0.05
     const moon_orbrate = (earth_rotrate + earth_orbrate) / 2 //faster than the Earth orbits the Sun but slower than the Earth spins
-    const moon_mat = m4listmul([m4trans(...earth_pos), earth_orbit, moon_scale, m4rotY(seconds*moon_orbrate), m4trans(moon_orbdist, 0, 0)])
+    const moon_tilt = m4rotX(0.2) // just a lil for fun :)
+    const moon_mat = m4listmul([m4trans(...earth_pos), earth_orbit, moon_tilt, m4rotY(seconds*moon_orbrate), m4trans(moon_orbdist, 0, 0), moon_scale])
     items.push(TET)
     mats.push(moon_mat)
+
+    const mars_size = 0.8*earth_size;
+    const mars_scale = m4uscale(mars_size)
+    const mars_rotrate = earth_rotrate / 2.2
+    const mars_orbdist = 1.6*earth_orbdist
+    const mars_orbrate = earth_orbrate / 1.9
+    const mars_tilt = m4rotX(0.3)
+    const mars_mat = m4listmul([m4rotY(seconds*mars_orbrate), m4trans(mars_orbdist, 0, 0), mars_tilt, m4rotY(mars_rotrate*seconds), mars_scale])
+    items.push(OCT)
+    mats.push(mars_mat)
+    
+    const phob_size = 0.5 // Implicitly *mars_size
+    const phob_scale = m4uscale(phob_size)
+    const phob_orbdist = 1.5 // Implicitly *mars_size;
+    const phob_orbrate = 3*mars_rotrate
+    const phob_mat = m4listmul([
+        mars_mat, m4rotY(seconds*phob_orbrate), m4trans(phob_orbdist, 0, 0), phob_scale
+    ])
+    items.push(TET)
+    mats.push(phob_mat)
+
+    const deim_size = 0.5*phob_size // Implicitly *mars_size
+    const deim_scale = m4uscale(deim_size)
+    const deim_orbdist = 2*phob_orbdist // Implicitly *mars_size;
+    const deim_orbrate = 1.3*mars_rotrate
+    const deim_mat = m4listmul([
+        mars_mat, m4rotY(seconds*deim_orbrate), m4trans(deim_orbdist, 0, 0), deim_scale
+    ])
+    items.push(TET)
+    mats.push(deim_mat)
+
 
 
 
