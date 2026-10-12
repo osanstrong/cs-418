@@ -1,0 +1,512 @@
+
+
+import { m4trans, m4rotZ, m4scale, m4mul, m4perspNegZ, m4rotX, m4rotY, m3mul, m3rotY, mul, mag} from "./math.js"
+
+/***
+ * Multiplies from right to left
+ */
+function m4listmul(m4list) {
+    var right = m4list[m4list.length-1]
+    for (let i = m4list.length-2; i >= 0; i--) {
+        right = m4mul(m4list[i], right)
+    }
+    return right
+}
+function m4uscale(scale) {
+    return m4scale(scale, scale, scale)
+}
+/**
+ * Assembles a set of vertices for the I, and an index buffer
+ */
+class Consts{
+    static raw_I_verts = [
+        0, 0,
+        7, 0,
+        7, 2,
+        0, 2,
+
+        2, 2,
+        5, 2,
+        5, 10,
+        2, 10,
+
+        0, 10,
+        7, 10,
+        7, 12,
+        0, 12
+    ]
+    static raw_I_brokenverts = [
+        0, 10,
+        7, 0,
+        7, 2,
+        0, 2,
+
+        2, 2,
+        5, 2,
+        5, 10,
+        2, 10,
+
+        0, 10,
+        7, 10,
+        7, 12,
+        0, 12
+    ]
+    static raw_I_indices = [
+        0, 1, 2,
+        2, 3, 0,
+
+        4, 5, 6,
+        6, 7, 4,
+
+        8, 9, 10,
+        10, 11, 8
+    ]
+}
+function make_I() {
+    const raw_I = Consts.raw_I_verts;
+    const indices = Consts.raw_I_indices;
+    return [raw_I, indices]
+}
+
+function get_I_dims() {
+    return [7, 12]
+}
+class Buffers{
+    // Just here for data stashing
+    // static tet_attrib = null;
+    // static tet_idx = null;
+    // static oct_attrib = null;
+    // static oct_idx = null;
+
+    static shape_attrib = null;
+    static shape_idx = null
+    static tet_offset = 0
+    static tet_length = 3*4 // 4 vertices, 3 indices per vertex
+    static oct_offset = Buffers.tet_length;
+    static oct_length = 3*8
+
+    static load_buffers(gl) {
+    
+        // Buffers.tet_attrib = gl.createBuffer();
+        // Buffers.tet_idx = gl.createBuffer();
+        // gl.bindBuffer(gl.ARRAY_BUFFER, Buffers.tet_attrib)
+        // var tet_attribs = Buffers.float_stitch(Tet.attrib_order);
+        // console.log(tet_attribs);
+        // gl.bufferData(gl.ARRAY_BUFFER, tet_attribs, gl.STATIC_DRAW)
+        // gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, Buffers.tet_idx);
+        // gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, Buffers.int_stitch([Tet.tri_indices]), gl.STATIC_DRAW);
+
+        // Buffers.oct_attrib = gl.createBuffer();
+        // Buffers.oct_idx = gl.createBuffer();
+        // gl.bindBuffer(gl.ARRAY_BUFFER, Buffers.oct_attrib)
+        // gl.bufferData(gl.ARRAY_BUFFER, Buffers.float_stitch(Oct.attrib_order), gl.STATIC_DRAW)
+        // gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, Buffers.oct_idx);
+        // gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, Buffers.int_stitch([Oct.tri_indices]), gl.STATIC_DRAW);
+        Buffers.shape_attrib = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, Buffers.shape_attrib)
+        gl.bufferData(gl.ARRAY_BUFFER, 
+        //     Buffers.concat_floats([
+        //     Buffers.float_stitch(Tet.attrib_order),
+        //     Buffers.float_stitch(Oct.attrib_order)
+        // ]), 
+        Buffers.float_stitch(Shape.attrib_order),
+        gl.STATIC_DRAW)
+        Buffers.shape_idx = gl.createBuffer();
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, Buffers.shape_idx)
+        gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, 
+        //     Buffers.concat_ints([
+        //     Buffers.int_stitch([Tet.tri_indices]),
+        //     Buffers.int_stitch([Oct.tri_indices])
+        // ]), 
+        Buffers.int_stitch([Shape.tri_indices]),
+        gl.STATIC_DRAW)
+    }
+    // Assumes all lists have same number of points, and within a list all points have same number of data
+    static float_stitch(lists) {
+        var final_array = []
+        const num_verts = lists[0].length
+        for (let i = 0; i < num_verts; i++) {
+            for (const list of lists) {
+                final_array.push(...list[i])
+            }
+        }
+        return new Float32Array(final_array);
+    }
+    static concat_floats(lists) {
+        var final_array = []
+        for (const list of lists) {
+            final_array.push(...list)
+        }
+        return new Float32Array(final_array);
+    }
+    static int_stitch(lists) {
+        var final_array = []
+        const num_verts = lists[0].length
+        for (let i = 0; i < num_verts; i++) {
+            for (const list of lists) {
+                final_array.push(...list[i])
+            }
+        }
+        return new Int16Array(final_array);
+    }
+    static concat_ints(lists) {
+        var final_array = []
+        for (const list of lists) {
+            final_array.push(...list)
+        }
+        return new Int16Array(final_array);
+    }
+}
+class Tet{
+    static positions = [[1,1,1], [-1,-1,1], [-1,1,-1], [1,-1,-1]]
+    static colors = [[1,1,1], [0,0,1], [0,1,0], [1,0,0]]
+    static tri_indices = [[0,1,2], [0,2,3], [0,3,1], [1,2,3]]
+    static attrib_order = [Tet.positions, Tet.colors]
+}
+class Oct{
+    static positions = [[1,0,0],[0,1,0],[0,0,1],[0,-1,0],[0,0,-1],[-1,0,0]]
+    static colors = [[1,0.5,0.5],[0.5,1,0.5],[0.5,0.5,1],[0.5,0,0.5],[0.5,0.5,0],[0,0.5,0.5]]
+    static tri_indices = [[0,1,2], [0,2,3], [0,3,4], [0,4,1], [5,1,4], [5,4,3], [5,3,2], [5,2,1]]
+    static attrib_order = [Oct.positions, Oct.colors]
+}
+class Shape{
+    // static positions = [[1,1,1], [-1,-1,1], [-1,1,-1], [1,-1,-1],
+    //                     [1,0,0],[0,1,0],[0,0,1],[0,-1,0],[0,0,-1],[-1,0,0]]
+
+    // static colors = [[1,1,1], [0,0,1], [0,1,0], [1,0,0],
+    //                 [1,0.5,0.5],[0.5,1,0.5],[0.5,0.5,1],[0.5,0,0.5],[0.5,0.5,0],[0,0.5,0.5]]
+    // // static tri_indices = [[0,1,2], [0,2,3], [0,3,1], [1,2,3]].push(
+    // //     ...Shape.shift([[0,1,2], [0,2,3], [0,3,4], [0,4,1], [5,1,4], [5,4,3], [5,3,2], [5,2,1]], 4))
+    // static tri_indices = [...[[0,1,2], [0,2,3], [0,3,1], [1,2,3]],
+    //     ...Shape.shift([[0,1,2], [0,2,3], [0,3,4], [0,4,1], [5,1,4], [5,4,3], [5,3,2], [5,2,1]], 4)]
+    static positions = [...Tet.positions, ...Oct.positions]
+    static colors = [...Tet.colors, ...Oct.colors]
+    static tri_indices = [...Tet.tri_indices, ...Shape.shift(Oct.tri_indices, 4)]
+    static attrib_order = [Shape.positions, Shape.colors]
+                            
+    static shift(verts, offset) {
+        var new_verts = []
+        for (const vert of verts) {
+            var new_vert = vert
+            for (let i = 0; i < 3; i++) {
+                new_vert[i] = vert[i] + offset;
+            } 
+            new_verts.push(new_vert)
+        }
+        return new_verts
+    }
+    static attrib_order = [Shape.positions, Shape.colors]
+}
+
+
+
+
+
+/**
+ * Compiles two shaders, links them together, looks up their uniform locations,
+ * and returns the result. Reports any shader errors to the console.
+ *
+ * @param {string} vs_source - the source code of the vertex shader
+ * @param {string} fs_source - the source code of the fragment shader
+ * @return {WebGLProgram} the compiled and linked program
+ */
+function compile(vs_source, fs_source) {
+    const vs = gl.createShader(gl.VERTEX_SHADER)
+    gl.shaderSource(vs, vs_source)
+    gl.compileShader(vs)
+    if (!gl.getShaderParameter(vs, gl.COMPILE_STATUS)) {
+        console.error(gl.getShaderInfoLog(vs))
+        throw Error("Vertex shader compilation failed")
+    }
+
+    const fs = gl.createShader(gl.FRAGMENT_SHADER)
+    gl.shaderSource(fs, fs_source)
+    gl.compileShader(fs)
+    if (!gl.getShaderParameter(fs, gl.COMPILE_STATUS)) {
+        console.error(gl.getShaderInfoLog(fs))
+        throw Error("Fragment shader compilation failed")
+    }
+
+    const program = gl.createProgram()
+    gl.attachShader(program, vs)
+    gl.attachShader(program, fs)
+    gl.linkProgram(program)
+    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+        console.error(gl.getProgramInfoLog(program))
+        throw Error("Linking failed")
+    }
+    
+    const uniforms = {}
+    for(let i=0; i<gl.getProgramParameter(program, gl.ACTIVE_UNIFORMS); i+=1) {
+        let info = gl.getActiveUniform(program, i)
+        uniforms[info.name] = gl.getUniformLocation(program, info.name)
+    }
+    program.uniforms = uniforms
+
+    // Generate static parts of the geometry
+
+    // const [positions, indices] = make_I()
+    // Buffers.posBuffer = gl.createBuffer();
+    // // const positionBuffer = gl.createBuffer();
+    // gl.bindBuffer(gl.ARRAY_BUFFER, Buffers.posBuffer);
+    // gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(positions), gl.STATIC_DRAW);
+
+    // Buffers.newPosBuffer = gl.createBuffer();
+    // gl.bindBuffer(gl.ARRAY_BUFFER, Buffers.newPosBuffer);
+    // Consts.raw_I_brokenverts[1] = -10;
+    // console.log(Buffers.newPosBuffer)
+    // gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(Consts.raw_I_brokenverts), gl.STATIC_DRAW);
+
+    // gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+    
+    
+    // Buffers.indexBuffer = gl.createBuffer();
+    // gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, Buffers.indexBuffer);
+    // gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Int16Array(indices), gl.STATIC_DRAW);
+    
+    // gl.bindBuffer(gl.ARRAY_BUFFER, Buffers.newPosBuffer);
+    // gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, Buffers.indexBuffer);
+    
+    Buffers.load_buffers(gl);
+    
+
+    // for (const buffer of [Buffers.tet_attrib, Buffers.oct_attrib]) {
+        // gl.bindBuffer(gl.ARRAY_BUFFER, buffer)
+        // gl.bindBuffer(gl.ARRAY_BUFFER, Buffers.shape_attrib)
+        const float_size = 4;
+        const vert_size = 6*float_size;
+        const positionLoc = 0;
+        gl.enableVertexAttribArray(positionLoc)
+        // Tell the attribute how to get data out of positionBuffer (ARRAY_BUFFER)
+        var size = 3;          // 2 components per iteration
+        var type = gl.FLOAT;   // the data is 32bit floats
+        var normalize = false; // don't normalize the data
+        var stride = vert_size;        // go this many bytes;     0 = move forward size * sizeof(type) each iteration to get the next position
+        var buffer_offset = 0;        // start at the beginning of the buffer
+        gl.vertexAttribPointer(
+            positionLoc, size, type, normalize, stride, buffer_offset)
+        const colorLoc = 1;
+        gl.enableVertexAttribArray(colorLoc)
+        // Tell the attribute how to get data out of positionBuffer (ARRAY_BUFFER)
+        var size = 3;          // 1 component per iteration
+        // var type = gl.FLOAT;   // the data is 32bit floats
+        // var normalize = false; // don't normalize the data
+        var stride = vert_size;        // go this many bytes; 0 = move forward size * sizeof(type) each iteration to get the next position
+        var buffer_offset = 3*float_size;        // start 1*4 from the beginning of the buffer
+        gl.vertexAttribPointer(
+            colorLoc, size, type, normalize, stride, buffer_offset)
+
+        return program
+    // }
+}
+
+
+/**
+ * Clears the screen, sends two uniforms to the GPU, and asks the GPU to draw
+ * several points. Note that no geometry is provided; the point locations are
+ * computed based on the uniforms in the vertex shader.
+ *
+ * @param {Number} seconds - the number of seconds since the animation began
+ */
+function draw(seconds) {
+    const count = 6+(seconds*100)%500          // number of vertices to draw
+
+    gl.clear(gl.COLOR_BUFFER_BIT)
+    gl.useProgram(program)
+    gl.uniform1f(program.uniforms.seconds, seconds)
+    gl.uniform1i(program.uniforms.count, count)
+
+
+    // var [width, height] = get_I_dims() // scale to maintain aspect ratio but so that all dimensions fit within [-1, 1]
+    // var max_dim = Math.max(width, height)
+    // var extent = 0.3;
+    // var vp_scale = m4scale(2*extent/max_dim, 2*extent/max_dim, 1)
+    // var vp_shift = m4trans(-1, -1)
+    // // var vp_tf = m4mul(vp_shift, vp_scale)
+    // var scale = 0.1
+    // var vp_tf = m4scale(scale, scale, scale)
+    
+    // // var vp_tf = m4trans(0, 0, 0)
+
+
+    // var rot = m4rotZ(seconds*5)
+    // var rot2 = m4rotX(seconds*5)
+    // rot = m4mul(rot2, rot)
+    // var pos_delta = [0.2, 0.2]
+    // var position = m4trans(Math.cos(seconds*3)*pos_delta[0], Math.sin(seconds*2 - 0.1)*pos_delta[1], 0)
+    // var scale_factor = (Math.sin(seconds*2)**2)*0.6+1;
+    // var scale = m4scale(scale_factor, scale_factor, 1)
+
+    // var proj = m4mul(position, m4mul(rot, m4mul(position, m4mul(scale, vp_tf))))
+    // var proj = m4listmul([position, rot, position, scale, vp_tf])
+
+    // proj = m4mul(m4trans(0, 0, -0.5), proj) //Move this sucker away from the camera; as a stopgap rn instead of actually having a full camera position simulation
+    // proj = m4mul(p, proj) //Apply projection at the end of all transformation
+    // gl.uniformMatrix4fv(program.uniforms.proj, false, proj)
+
+    
+    // gl.bindBuffer(gl.ARRAY_BUFFER, Buffers.oct_attrib)
+    // gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, Buffers.oct_idx)
+    // const sizeInBytes = gl.getBufferParameter(gl.ELEMENT_ARRAY_BUFFER, gl.BUFFER_SIZE);
+    // console.log(`Index buffer size: ${sizeInBytes} bytes`);
+
+    const TET = 0;
+    const OCT = 1;
+
+    var items = []
+    var mats = []
+
+    const pi = 3.141592653589 // sorry i remember it faster than remembering a library
+    
+    
+    const sun_rotrate = 2*pi / 2 // Rotate a full 2pi, every 2 seconds
+    const sun_rot = m4rotY(sun_rotrate*seconds)
+    const sun_size = 0.1
+    const sun_scale = m4scale(sun_size, sun_size, sun_size);
+    
+    const sun_mat = m4listmul([sun_rot, sun_scale])
+    items.push(OCT)
+    mats.push(sun_mat)
+
+
+    const earth_rotrate = 2*pi * 2.1 // "Several" times a second 
+    const earth_rot = m4rotY(earth_rotrate*seconds)
+    const earth_size = 0.04
+    const earth_scale = m4uscale(earth_size)
+    const earth_orbdist = 0.35
+    const earth_orbrate = 2*pi / 3.5 // Once every "few" seconds
+    // const earth_orbit = m4mul(m4rotY(seconds*earth_orbrate), m4trans(earth_orbdist, 0, 0))
+    const earth_orbit = m4rotY(seconds*earth_orbrate)
+    const earth_pos = m3mul(m3rotY(seconds*earth_orbrate), new Float32Array([earth_orbdist, 0, 0])) // Separate position from full rotation bc we want axis tilt independent of plane orbit
+    const earth_tiltdeg = 23.5
+    const earth_axtilt = m4rotX(earth_tiltdeg * (pi/180)) //Independent so earth experiences seasons; yes this was what i spent most of the time troubleshooting
+    const earth_mat = m4listmul([m4trans(...earth_pos), earth_axtilt, earth_orbit, earth_rot, earth_scale])
+    items.push(OCT)
+    mats.push(earth_mat)
+
+    const moon_scale = m4uscale(0.4*earth_size)
+    const moon_orbdist = 0.15
+    const moon_orbrate = (earth_rotrate + earth_orbrate) / 2 //faster than the Earth orbits the Sun but slower than the Earth spins
+    const moon_mat = m4listmul([m4trans(...earth_pos), earth_orbit, moon_scale, m4rotY(seconds*moon_orbrate), m4trans(moon_orbdist, 0, 0)])
+    items.push(TET)
+    mats.push(moon_mat)
+
+
+
+
+
+    const scene_scale = 0.8 // option to rescale whole scene at end
+    const cam_z = 0.5;
+    var proj = m4mul(m4trans(0, -0.1, -cam_z), m4uscale(scene_scale)) //Move this sucker away from the camera; as a stopgap rn instead of actually having a full camera position simulation
+    proj = m4mul(m4rotX(0.1*pi), proj)
+    proj = m4mul(p, proj) //Apply projection at the end of all transformation
+
+    const connection = gl.TRIANGLES
+    // const length = Consts.raw_I_indices.length
+    const idx_type = gl.UNSIGNED_SHORT
+
+    const tet_length = Tet.tri_indices.length*3
+    const oct_length = Oct.tri_indices.length*3
+    gl.bindBuffer(gl.ARRAY_BUFFER, Buffers.shape_attrib)
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, Buffers.shape_idx)
+    for (let i = 0; i < items.length; i++) {
+        const item_type = items[i]
+        const item_mat = mats[i]
+        var length = 0
+        var offset = 0
+        
+        if (item_type == TET ) {
+            length = tet_length
+            offset = Buffers.tet_offset
+            // console.log(`printing ${length} items from offset ${offset}`)
+            // gl.bindBuffer(gl.ARRAY_BUFFER, Buffers.tet_attrib)
+            // gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, Buffers.tet_idx)
+        } else {
+            length = oct_length   
+            offset = Buffers.oct_offset
+            // gl.bindBuffer(gl.ARRAY_BUFFER, Buffers.oct_attrib)
+            // gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, Buffers.oct_idx)
+        }
+
+        gl.uniformMatrix4fv(program.uniforms.proj, false, m4mul(proj, item_mat))
+        gl.drawElements(connection, length, idx_type, offset*2);
+    }
+
+
+    
+
+    // const length = oct_length
+
+
+    // 1. Create a destination typed array matching the expected data type and size
+    // const outputData = new Float32Array(36); 
+
+    // 2. Bind the target buffer you want to read from
+    // gl.bindBuffer(gl.ARRAY_BUFFER, Buffers.shape_attrib);
+
+    // 3. Read the data back from GPU to CPU
+    // getBufferSubData(target, srcByteOffset, dstData)
+    // gl.getBufferSubData(gl.ARRAY_BUFFER, 0, outputData);
+
+    const intOutData = new Int16Array(length);
+    // gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, Buffers.tet_idx);
+    // gl.getBufferSubData(gl.ELEMENT_ARRAY_BUFFER, 0, intOutData);
+    // console.log(outputData)
+    // console.log(intOutData)
+}
+
+/**
+ * Runs the animation using requestAnimationFrame. This is like a loop that
+ * runs once per screen refresh, but a loop won't work because we need to let
+ * the browser do other things between ticks. Instead, we have a function that
+ * requests itself be queued to be run again as its last step.
+ * 
+ * @param {Number} milliseconds - milliseconds since web page loaded; 
+ *        automatically provided by the browser when invoked with
+ *        requestAnimationFrame
+ */
+function tick(milliseconds) {
+    const seconds = milliseconds / 1000
+    draw(seconds)
+    requestAnimationFrame(tick) // <- only call this here, nowhere else
+}
+
+/** Resizes the canvas to completely fill the screen; taken from view-source:https://cs418.cs.illinois.edu/website/code/3d-webgl/7-starburst.html 
+ * Reusing the same camera perspective for now because got distracted with setup and took too much time
+*/
+function fillScreen() {
+    let canvas = document.querySelector('canvas')
+    document.body.style.margin = '0'
+    canvas.style.width = '100vw'
+    canvas.style.height = '100vh'
+    canvas.width = canvas.clientWidth
+    canvas.height = canvas.clientHeight
+    canvas.style.width = ''
+    canvas.style.height = ''
+    if (window.gl) {
+        gl.viewport(0,0, canvas.width, canvas.height)
+        // Same perspective camera as starburst, orbits doens't need much   
+        window.p = m4perspNegZ(0.1, 10, 1.5, canvas.width, canvas.height)
+    }
+    console.log("resizing!")
+}
+
+
+/**
+ * Fetches, reads, and compiles GLSL; sets two global variables; and begins
+ * the animation
+ */
+async function setup() {
+    window.gl = document.querySelector('canvas').getContext('webgl2')
+    gl.enable(gl.DEPTH_TEST)
+    const vs = await fetch('vert.glsl').then(res => res.text())
+    const fs = await fetch('frag.glsl').then(res => res.text())
+    window.program = compile(vs,fs)
+    window.addEventListener('resize', fillScreen)
+    fillScreen()
+    tick(0) // <- ensure this function is called only once, at the end of setup
+}
+
+
+// File-level start
+window.addEventListener('load', setup)
