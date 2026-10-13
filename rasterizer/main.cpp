@@ -374,7 +374,13 @@ struct Context {
       new_pix.g = tex_y;
       
       new_pix = pixel_t((*tex)[tex_y][tex_x]);
-      new_pix.a = 255;
+
+      if (decals) {
+        pixel_t base{ftobyte(r), ftobyte(g), ftobyte(b), ftobyte(a)};
+        new_pix = alpha_blend(base, new_pix);
+      } else {
+        new_pix.a = 255;
+      }
 
     } else {
       new_pix = {ftobyte(r), ftobyte(g), ftobyte(b), ftobyte(a)};
@@ -671,6 +677,9 @@ int main(int argc, char* argv[]) {
       break;}
       case "cull"_hash:{
         gl.cull_backface = true;
+      break;}
+      case "decals"_hash:{
+        gl.decals = true;
       break;}
       case "relpath"_hash:{
         file_prefix = cmd[1];

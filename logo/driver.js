@@ -4,8 +4,8 @@ import { m4trans, m4rotZ, m4scale, m4mul } from "./math.js"
 /**
  * Assembles a set of vertices for the I, and an index buffer
  */
-function make_I() {
-    const raw_I = [
+class Consts{
+    static raw_I_verts = [
         0, 0,
         7, 0,
         7, 2,
@@ -21,7 +21,7 @@ function make_I() {
         7, 12,
         0, 12
     ]
-    const indices = [
+    static raw_I_indices = [
         0, 1, 2,
         2, 3, 0,
 
@@ -31,9 +31,7 @@ function make_I() {
         8, 9, 10,
         10, 11, 8
     ]
-    return [raw_I, indices]
 }
-
 function get_I_dims() {
     return [7, 12]
 }
@@ -94,6 +92,36 @@ function compile(vs_source, fs_source) {
     }
     program.uniforms = uniforms
 
+    // Static Geometry
+
+    const positions = Consts.raw_I_verts;
+    const indices = Consts.raw_I_indices;
+    const positionBuffer = gl.createBuffer();
+    const positionLoc = 0;
+    gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(positions), gl.STATIC_DRAW);
+    
+    const indexBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Int16Array(indices), gl.STATIC_DRAW);
+    
+    gl.enableVertexAttribArray(positionLoc)
+    // Tell the attribute how to get data out of positionBuffer (ARRAY_BUFFER)
+    var size = 2;          // 2 components per iteration
+    var type = gl.FLOAT;   // the data is 32bit floats
+    var normalize = false; // don't normalize the data
+    var stride = 0;        // 0 = just tightly packed around this one attribute 
+    var buffer_offset = 0;        // start at the beginning of the buffer
+    gl.vertexAttribPointer(
+        positionLoc, size, type, normalize, stride, buffer_offset)
+
+    
+    // Develop (static) transform from easy-to-define coords to [-1, 1] intent
+    const [width, height] = get_I_dims() // scale to maintain aspect ratio but so that all dimensions fit within [-1, 1]
+    const max_dim = Math.max(width, height)
+    const extent = 0.3;
+    const vp_scale = m4scale(2*extent/max_dim, 2*extent/max_dim, 1)
+    Consts.input_transform = vp_scale
     return program
 }
 
@@ -114,17 +142,8 @@ function draw(seconds) {
     gl.uniform1i(program.uniforms.count, count)
 
 
-    var [width, height] = get_I_dims() // scale to maintain aspect ratio but so that all dimensions fit within [-1, 1]
-    var max_dim = Math.max(width, height)
-    var extent = 0.3;
-    var vp_scale = m4scale(2*extent/max_dim, 2*extent/max_dim, 1)
-    var vp_shift = m4trans(-1, -1)
-    // var vp_tf = m4mul(vp_shift, vp_scale)
-    var vp_tf = vp_scale
     
-    // var vp_tf = m4trans(0, 0, 0)
-
-
+    // Dynamic transformations generated each frame
     var rot = m4rotZ(seconds*5)
     var pos_delta = [0.2, 0.2]
     var position = m4trans(Math.cos(seconds*3)*pos_delta[0], Math.sin(seconds*2 - 0.1)*pos_delta[1], 0)
@@ -132,32 +151,13 @@ function draw(seconds) {
     var scale = m4scale(scale_factor, scale_factor, 1)
 
     var aspect_ratio = (gl.canvas.height) / (gl.canvas.width);
-    var proj = m4mul(m4scale(aspect_ratio, 1, 1), m4mul(position, m4mul(rot, m4mul(position, m4mul(scale, vp_tf)))))
+    var proj = m4mul(m4scale(aspect_ratio, 1, 1), m4mul(position, m4mul(rot, m4mul(position, m4mul(scale, Consts.input_transform)))))
     gl.uniformMatrix4fv(program.uniforms.proj, false, proj)
 
-    const [positions, indices] = make_I()
-    const positionBuffer = gl.createBuffer();
-    const positionAttributeLocation = gl.getAttribLocation(program, "a_position");
-    gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
-    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(positions), gl.STATIC_DRAW);
-    
-    const indexBuffer = gl.createBuffer();
-    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
-    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Int16Array(indices), gl.STATIC_DRAW);
-    
-    gl.enableVertexAttribArray(positionAttributeLocation)
-    // Tell the attribute how to get data out of positionBuffer (ARRAY_BUFFER)
-    var size = 2;          // 2 components per iteration
-    var type = gl.FLOAT;   // the data is 32bit floats
-    var normalize = false; // don't normalize the data
-    var stride = 0;        // 0 = move forward size * sizeof(type) each iteration to get the next position
-    var buffer_offset = 0;        // start at the beginning of the buffer
-    gl.vertexAttribPointer(
-        positionAttributeLocation, size, type, normalize, stride, buffer_offset)
 
     const connection = gl.TRIANGLES
-    const length = indices.length
-    type = gl.UNSIGNED_SHORT
+    const length = Consts.raw_I_indices.length
+    const type = gl.UNSIGNED_SHORT
     const offset = 0
     gl.drawElements(connection, length, type, offset);
 }

@@ -22,14 +22,20 @@ image_t *load_image(const char *filename) {
   uint8_t header[8];
   png_byte color = 0, depth = 0;
   
+  printf("load image called from path %s!\n", filename);
   fp = fopen(filename, "rb");
+  printf("Load image made it to line %d!\n", __LINE__);
   if (!fp) goto fail1;
   fread(header, 1, 8, fp);
+  printf("Load image made it to line %d!\n", __LINE__);
   if (png_sig_cmp(header, 0, 8)) goto fail2;
   ps = png_create_read_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
+  printf("Load image made it to line %d!\n", __LINE__);
   if (!ps) goto fail2;
   pi = png_create_info_struct(ps);
+  printf("Load image made it to line %d!\n", __LINE__);
   if (!pi) goto fail3;
+  printf("Load image made it to line %d!\n", __LINE__);
   
   png_set_sig_bytes(ps, 8);
   png_init_io(ps, fp);

@@ -271,13 +271,18 @@ function draw(seconds) {
     items.push(OCT)
     mats.push(sun_mat)
 
-
-    const earth_rotrate = 2*pi * 1.1 // "Several" times a second, i.e. 1.1 + 2 = 3.1, any more felt WAY too fast to watch
-    const earth_rot = m4rotY(earth_rotrate*seconds)
+    // NOTE 1: For arbitrary comparisons on rotation speed like "faster than", or "several times a second", I have opted to take this as *absolute* rotation speed. (Since rotation and orbit combine)
+    //          In certain cases, interpreting as "2.2 times the relative rotation of this orbit, and stacked ON TOP of that orbit" just produces orbits too fast, and this seems to better match the example anyways.
+    // NOTE 2: Earth's axis is given special treatment to give the independent tilt that gives Earth cool seasons
+    //          In contrast, Mars and its moons are defined on top of each other or simplicity.
+    // NOTE 3: Certain orbits have (non-independent) axial tilts added for clearer viewing, as does the final camera projection
+    
     const earth_size = 0.04
     const earth_scale = m4uscale(earth_size)
     const earth_orbdist = 0.25
     const earth_orbrate = 2*pi / 3.5 // Once every "few" seconds
+    const earth_rotrate = 2*pi * 2 -  earth_orbrate// "Several" times a second, more than 2 feels wayy too fast
+    const earth_rot = m4rotY(earth_rotrate*seconds)
     // const earth_orbit = m4mul(m4rotY(seconds*earth_orbrate), m4trans(earth_orbdist, 0, 0))
     const earth_orbit = m4rotY(seconds*earth_orbrate)
     const earth_pos = m3mul(m3rotY(seconds*earth_orbrate), new Float32Array([earth_orbdist, 0, 0])) // Separate position from full rotation bc we want axis tilt independent of plane orbit
@@ -297,15 +302,15 @@ function draw(seconds) {
 
     const mars_size = 0.8*earth_size;
     const mars_scale = m4uscale(mars_size)
-    const mars_rotrate = earth_rotrate / 2.2
     const mars_orbdist = 1.6*earth_orbdist
     const mars_orbrate = earth_orbrate / 1.9
+    const mars_rotrate = (earth_rotrate + earth_orbrate) / 2.2 - mars_orbrate // 2.2 * final perceived rotational rate
     const mars_tilt = m4rotX(0.3)
     const mars_mat = m4listmul([m4rotY(seconds*mars_orbrate), m4trans(mars_orbdist, 0, 0), mars_tilt, m4rotY(mars_rotrate*seconds), mars_scale])
     items.push(OCT)
     mats.push(mars_mat)
     
-    const phob_size = 0.5 // Implicitly *mars_size
+    const phob_size = 0.5 // Implicitly *mars_size, fully scales to Mars orbit matrix
     const phob_scale = m4uscale(phob_size)
     const phob_orbdist = 1.5 // Implicitly *mars_size;
     const phob_orbrate = 3*mars_rotrate
@@ -315,7 +320,7 @@ function draw(seconds) {
     items.push(TET)
     mats.push(phob_mat)
 
-    const deim_size = 0.5*phob_size // Implicitly *mars_size
+    const deim_size = 0.5*phob_size // Implicitly *mars_size, fully scales to Mars orbit matrix
     const deim_scale = m4uscale(deim_size)
     const deim_orbdist = 2*phob_orbdist // Implicitly *mars_size;
     const deim_orbrate = 1.3*mars_rotrate
@@ -337,7 +342,6 @@ function draw(seconds) {
     proj = m4mul(p, proj) //Apply projection at the end of all transformation
 
     const connection = gl.TRIANGLES
-    // const length = Consts.raw_I_indices.length
     const idx_type = gl.UNSIGNED_SHORT
 
     const tet_length = Tet.tri_indices.length*3
@@ -353,14 +357,9 @@ function draw(seconds) {
         if (item_type == TET ) {
             length = tet_length
             offset = Buffers.tet_offset
-            // console.log(`printing ${length} items from offset ${offset}`)
-            // gl.bindBuffer(gl.ARRAY_BUFFER, Buffers.tet_attrib)
-            // gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, Buffers.tet_idx)
         } else {
             length = oct_length   
             offset = Buffers.oct_offset
-            // gl.bindBuffer(gl.ARRAY_BUFFER, Buffers.oct_attrib)
-            // gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, Buffers.oct_idx)
         }
 
         gl.uniformMatrix4fv(program.uniforms.proj, false, m4mul(proj, item_mat))

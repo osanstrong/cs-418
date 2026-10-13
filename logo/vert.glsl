@@ -1,6 +1,6 @@
 #version 300 es
 uniform mat4 proj;
-layout(position=0) in vec4 a_position;
+layout(location=0) in vec4 a_position;
 
 
 void main() {
