@@ -114,9 +114,25 @@ function compile(vs_source, fs_source) {
  * 
  * The grid is initialized with value 0 in each point 
  */
-function makeGrid(gridsize) {
+function makeGrid(gridsize, num_faults) {
     const gs = gridsize // Just an alias/shorthand, don't read too much into this
     var grid = new Array(gs*gs).fill(0)
+
+    // If 0 faults, generate hemisphere
+    if (num_faults == 0) {
+        console.log("No faults!!")
+        for (let i = 0; i < gs*gs; i++) {
+            var [x, y] = gridPos(gs, i)
+            var d2 = x*x + y*y
+            if (d2 <= 1) {
+                console.log(`Setting custom z of ${z}`)
+                var z = Math.sqrt(1 - d2)
+                grid[i] = z
+            } else {
+                console.log(`D2 was too big: ${d2}`)
+            }
+        }
+    }
     return grid
 }
 
@@ -178,7 +194,7 @@ function projMatrix(seconds) {
     var xy_rot = m4rotZ(angspeed*seconds)
 
     // Second transformation, rotate camera down from z-axis to a certain angle, then bring a certain distance away
-    var down_tilt = PI/2 * (1.2)
+    var down_tilt = PI/2 * (-0.8)
     var down_rot = m4rotX(down_tilt)
     var cam_dist = 2.5
     var cam_move = m4trans(0, 0, -cam_dist)
@@ -223,7 +239,7 @@ document.querySelector('#submit').addEventListener('click', event => {
     console.log(`Hi uh you pressed the button to submit size ${gridsize} grid with ${faults} faults`)
     Data.gridsize = gridsize
     Data.faults = faults
-    Data.grid = makeGrid(gridsize)
+    Data.grid = makeGrid(gridsize, faults)
     updateVertexBuffer(window.gl, Data.gridsize, Data.grid)
 });
 
