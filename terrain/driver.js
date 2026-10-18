@@ -1,8 +1,27 @@
+import { m4trans, m4rotZ, m4scale, m4mul, m4perspNegZ, m4rotX, m4rotY, m3mul, m3rotY, mul, mag} from "./math.js"
+
+/***
+ * Multiplies from right to left
+ */
+function m4listmul(m4list) {
+    var right = m4list[m4list.length-1]
+    for (let i = m4list.length-2; i >= 0; i--) {
+        right = m4mul(m4list[i], right)
+    }
+    return right
+}
+function m4uscale(scale) {
+    return m4scale(scale, scale, scale)
+}
+
 class Data {
     static grid = null
     static gridsize = 0
     static faults = 0
     static numVerts = 0
+
+    static canv_width = 0
+    static canv_height = 0
 }
 
 /**
@@ -27,6 +46,8 @@ function fillScreen() {
     canvas.style.height = '100%'
     canvas.width = canvas.clientWidth
     canvas.height = canvas.clientHeight
+    Data.canv_width = canvas.width
+    Data.canv_height = canvas.height
     canvas.style.width = ''
     canvas.style.height = ''
     gl.viewport(0,0, canvas.width, canvas.height)
@@ -149,9 +170,44 @@ function updateVertexBuffer(gl, gridsize, grid) {
         positionLoc, size, type, normalize, stride, buffer_offset) 
 }
 
+function projMatrix(seconds) {
+
+    // First transformation, rotate on xy plane
+    const PI = 3.141592653589
+    var angspeed = 2*PI / (8) // One revolution every 8 seconds
+    var xy_rot = m4rotZ(angspeed*seconds)
+
+    // Second transformation, rotate camera down from z-axis to a certain angle, then bring a certain distance away
+    var down_tilt = PI/2 * (1.2)
+    var down_rot = m4rotX(down_tilt)
+    var cam_dist = 2.5
+    var cam_move = m4trans(0, 0, -cam_dist)
+
+
+    // Second transformation, bring camera down to look at the origin from closer to the xy plane (after rotating, so it's like the camera is spinning around)
+    var cam_proj = m4perspNegZ(0.1, cam_dist*2, 1.5, Data.canv_width, Data.canv_height)
+
+    // Project to final aspect ratio; Shrink in whatever aspect necessary. Happens at end, so that it applies to final x, y
+    var aspect_mat
+    var [w, h] = [Data.canv_width, Data.canv_height]
+    if (w > h) {
+        // Wider than it is tall, shrink in width
+        aspect_mat = m4scale(h/w, 1, 1)
+    } else {
+        aspect_mat = m4scale(1, w/h, 1)
+    }
+
+    return m4listmul([cam_proj, cam_move, down_rot, xy_rot])
+    // return m4scale(0.5, 1, 1)
+}
+
 function draw(seconds) {
     gl.clear(gl.COLOR_BUFFER_BIT)
     gl.useProgram(program)  
+
+    const proj_mat = projMatrix(seconds)
+    gl.uniformMatrix4fv(program.uniforms.proj, false, proj_mat)
+
     gl.drawArrays(gl.LINES, 0, Data.numVerts)
     // console.log("Wow we're gonna draw that's so cool")
 }
