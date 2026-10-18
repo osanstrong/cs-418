@@ -2,6 +2,22 @@ class Data {
     static grid = null
     static gridsize = 0
     static faults = 0
+    static numVerts = 0
+}
+
+/**
+ * Miscellaneous utility: print buffer data for debugging
+ * 
+ * targetBuffer: E.g. gl.ARRAY_BUFFER or gl.ELEMENT_ARRAY_BUFFER
+ * currentLength: In terms of bytes, so e.g. items*Float32Array.BYTES_PER_ELEMENT
+ */
+function printBuffer(targetBuffer, currentLength) {
+    const arrBuffer = new ArrayBuffer(
+        currentLength,
+    );
+    gl.getBufferSubData(targetBuffer, 0, new Float32Array(arrBuffer));
+    console.log(new Float32Array(arrBuffer))
+    // console.log()
 }
 
 function fillScreen() {
@@ -50,6 +66,8 @@ function compile(vs_source, fs_source) {
     if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
         console.error(gl.getProgramInfoLog(program))
         throw Error("Linking failed")
+    } else {
+        console.log("Linking success!!")
     }
     
     const uniforms = {}
@@ -109,6 +127,7 @@ function updateVertexBuffer(gl, gridsize, grid) {
         vertData[i*3 + 1] = y
         vertData[i*3 + 2] = grid[i]
     }
+    Data.numVerts = vertData.length / 3
 
     Data.gridBuffer = gl.createBuffer()
     gl.bindBuffer(gl.ARRAY_BUFFER, Data.gridBuffer)
@@ -116,9 +135,24 @@ function updateVertexBuffer(gl, gridsize, grid) {
         new Float32Array(vertData), gl.STATIC_DRAW
     )
     // Next: update pointer
+
+    // printBuffer(gl.ARRAY_BUFFER, vertData.length*Float32Array.BYTES_PER_ELEMENT)
+    const positionLoc = 0
+    gl.enableVertexAttribArray(positionLoc)
+    // Tell the attribute how to get data out of positionBuffer (ARRAY_BUFFER)
+    var size = 3;          // 3 components per iteration
+    var type = gl.FLOAT;   // the data is 32bit floats
+    var normalize = false; // don't normalize the data
+    var stride = 0;        // 0 = just tightly packed around this one attribute 
+    var buffer_offset = 0;        // start at the beginning of the buffer
+    gl.vertexAttribPointer(
+        positionLoc, size, type, normalize, stride, buffer_offset) 
 }
 
 function draw(seconds) {
+    gl.clear(gl.COLOR_BUFFER_BIT)
+    gl.useProgram(program)  
+    gl.drawArrays(gl.LINES, 0, Data.numVerts)
     // console.log("Wow we're gonna draw that's so cool")
 }
 
@@ -175,4 +209,5 @@ function tick(milliseconds) {
 // document.addEventListener('resize', fillScreen)
 window.addEventListener('load', event => {
     setup()
+    console.log("We called setup, the program should be linked!")
 })
