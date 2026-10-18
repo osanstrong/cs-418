@@ -24,6 +24,7 @@ class Data {
     static canv_height = 0
 }
 
+const PI = 3.141592653589
 /**
  * Miscellaneous utility: print buffer data for debugging
  * 
@@ -132,8 +133,44 @@ function makeGrid(gridsize, num_faults) {
                 console.log(`D2 was too big: ${d2}`)
             }
         }
+    } else {
+        faultGrid(grid, num_faults)
     }
     return grid
+}
+
+function pointOnRightSide(lineStart, lineDelta, point) {
+    var pointDelta = [point[0] - lineStart[0], point[1] - lineStart[1]]
+    var pD = pointDelta, lD = lineDelta
+    var cross = (pD[0]*lD[1]) - (pD[1]*lD[0])
+    return cross > 0
+}
+
+function faultGrid(grid, num_faults) {
+    var faultNudge = 1
+    for (let f = 0; f < num_faults; f++) {
+        var faultPos = [Math.random()*2-1, Math.random()*2-1]
+        var ang = 2*PI*Math.random()
+
+        var faultDelta = [Math.cos(ang), Math.sin(ang)]
+
+        for (let i = 0; i < grid.length; i++) {
+            var point = gridPos(Data.gridsize, i)
+            if (pointOnRightSide(faultPos, faultDelta, point)) {
+                grid[i] += faultNudge
+            } else {
+                grid[i] -= faultNudge
+            }
+        }
+    }
+
+    // Normalize
+    var c = 0.5
+    var maxZ = Math.max(...grid)
+    var minZ = Math.min(...grid)
+    for (let i = 0; i < grid.length; i++) {
+        grid[i] = c * (grid[i] - 0.5*(maxZ+minZ)) / (maxZ - minZ)
+    }
 }
 
 function gridPos(gridsize, index) {
@@ -189,7 +226,6 @@ function updateVertexBuffer(gl, gridsize, grid) {
 function projMatrix(seconds) {
 
     // First transformation, rotate on xy plane
-    const PI = 3.141592653589
     var angspeed = 2*PI / (8) // One revolution every 8 seconds
     var xy_rot = m4rotZ(angspeed*seconds)
 
