@@ -1,4 +1,4 @@
-import { m4trans, m4rotZ, m4scale, m4mul, m4perspNegZ, m4rotX, m4rotY, m3mul, m3rotY, mul, mag} from "./math.js"
+import { m4trans, m4rotZ, m4scale, m4mul, m4perspNegZ, m4rotX, m4rotY, m3mul, m3rotY, mul, mag, cross, normalize, sub, m3rotX, m3rotZ} from "./math.js"
 
 /***
  * Multiplies from right to left
@@ -22,6 +22,8 @@ class Data {
 
     static canv_width = 0
     static canv_height = 0
+
+    static light_pos = new Float32Array([0.5, 0.5, 2])
 }
 
 const PI = 3.141592653589
@@ -29,11 +31,11 @@ const PI = 3.141592653589
  * Miscellaneous utility: print buffer data for debugging
  * 
  * targetBuffer: E.g. gl.ARRAY_BUFFER or gl.ELEMENT_ARRAY_BUFFER
- * currentLength: In terms of bytes, so e.g. items*Float32Array.BYTES_PER_ELEMENT
+ * currentLength: In terms of items
  */
-function printBuffer(targetBuffer, currentLength) {
+function printF32Buffer(targetBuffer, currentLength) {
     const arrBuffer = new ArrayBuffer(
-        currentLength,
+        currentLength*Float32Array.BYTES_PER_ELEMENT,
     );
     gl.getBufferSubData(targetBuffer, 0, new Float32Array(arrBuffer));
     console.log(new Float32Array(arrBuffer))
@@ -123,14 +125,14 @@ function makeGrid(gridsize, num_faults) {
     if (num_faults == 0) {
         console.log("No faults!!")
         for (let i = 0; i < gs*gs; i++) {
-            var [x, y] = gridPos(gs, i)
+            var [x, y] = gridXY(gs, i)
             var d2 = x*x + y*y
             if (d2 <= 1) {
-                console.log(`Setting custom z of ${z}`)
+                // console.log(`Setting custom z of ${z}`)
                 var z = Math.sqrt(1 - d2)
                 grid[i] = z
             } else {
-                console.log(`D2 was too big: ${d2}`)
+                // console.log(`D2 was too big: ${d2}`)
             }
         }
     } else {
@@ -155,7 +157,7 @@ function faultGrid(grid, num_faults) {
         var faultDelta = [Math.cos(ang), Math.sin(ang)]
 
         for (let i = 0; i < grid.length; i++) {
-            var point = gridPos(Data.gridsize, i)
+            var point = gridXY(Data.gridsize, i)
             if (pointOnRightSide(faultPos, faultDelta, point)) {
                 grid[i] += faultNudge
             } else {
@@ -173,7 +175,7 @@ function faultGrid(grid, num_faults) {
     }
 }
 
-function gridPos(gridsize, index) {
+function gridXY(gridsize, index) {
     const xi = index % gridsize
     const yi = Math.floor(index / gridsize)
     
@@ -186,6 +188,32 @@ function gridPos(gridsize, index) {
     return [x, y] 
 }
 
+function gridPos(grid, gridsize, index) {
+    const [x, y] = gridXY(gridsize, index)
+    const z = grid[index]
+    const pos = new Float32Array([x, y, z])
+    return pos
+}
+
+function gridNormal(grid, gridsize, index) {
+    const xi = index % gridsize
+    const yi = Math.floor(index / gridsize)
+
+    const vi = index
+    // West, east, north south
+    var wi = (xi == 0) ? vi : vi -1
+    var ei = (xi == gridsize-1) ? vi : vi + 1
+    var ni = (yi == 0) ? vi : vi - gridsize
+    var si = (yi == gridsize-1) ? vi : vi + gridsize
+
+    const w = gridPos(grid, gridsize, wi), e = gridPos(grid, gridsize, ei)
+    const n = gridPos(grid, gridsize, ni), s = gridPos(grid, gridsize, si)
+
+    const norm = normalize(cross(sub(n, s), sub(w, e)))
+    // console.log(`norm: ${norm}`)
+    return norm
+}
+
 /**
  * Theoretically we could optimize this by only sending indices and have the vertex shader convert those to xy but idk wanna optimize that at the start
  */
@@ -193,15 +221,23 @@ function updateVertexBuffer(gl, gridsize, grid) {
     // Data at every vertex:
     // vec3 (x, y, z)
     // I think that's about it?
-    const vertSize = 3
+    const vertSize = 6
     var vertData = new Array(vertSize*grid.length)
     for (let i = 0; i < grid.length; i++) {
-        var [x,y] = gridPos(gridsize, i)
-        vertData[i*3 + 0] = x
-        vertData[i*3 + 1] = y
-        vertData[i*3 + 2] = grid[i]
+        const vS = vertSize
+        var [x,y] = gridXY(gridsize, i)
+        vertData[i*vS + 0] = x
+        vertData[i*vS + 1] = y
+        vertData[i*vS + 2] = grid[i]
+
+        // Calculate normal
+        var [u, v, w] = gridNormal(grid, gridsize, i)
+        vertData[i*vS + 3] = u
+        vertData[i*vS + 4] = v
+        vertData[i*vS + 5] = w
+        // console.log(`Normal: (${u}, ${v}, ${w})`)
     }
-    Data.numVerts = vertData.length / 3
+    Data.numVerts = vertData.length / vertSize
 
     Data.gridBuffer = gl.createBuffer()
     gl.bindBuffer(gl.ARRAY_BUFFER, Data.gridBuffer)
@@ -210,30 +246,65 @@ function updateVertexBuffer(gl, gridsize, grid) {
     )
     // Next: update pointer
 
-    // printBuffer(gl.ARRAY_BUFFER, vertData.length*Float32Array.BYTES_PER_ELEMENT)
+    // printF32Buffer(gl.ARRAY_BUFFER, vertData.length)
+    const float_size = Float32Array.BYTES_PER_ELEMENT
+    const num_floats = 6
     const positionLoc = 0
     gl.enableVertexAttribArray(positionLoc)
     // Tell the attribute how to get data out of positionBuffer (ARRAY_BUFFER)
     var size = 3;          // 3 components per iteration
     var type = gl.FLOAT;   // the data is 32bit floats
     var normalize = false; // don't normalize the data
-    var stride = 0;        // 0 = just tightly packed around this one attribute 
+    var stride = num_floats*float_size;        // 0 = just tightly packed around this one attribute 
     var buffer_offset = 0;        // start at the beginning of the buffer
     gl.vertexAttribPointer(
         positionLoc, size, type, normalize, stride, buffer_offset) 
+    const normalLoc = 1
+    gl.enableVertexAttribArray(normalLoc)
+    size = 3
+    type = gl.FLOAT
+    normalize = false
+    stride = num_floats*float_size
+    buffer_offset = 3*float_size
+    gl.vertexAttribPointer(
+        normalLoc, size, type, normalize, stride, buffer_offset)
 }
 
-function projMatrix(seconds) {
+function updateElementBuffer(gl) {
+    // https://cs418.cs.illinois.edu/website/text/make-geom.html
+    const gs = Data.gridsize
+    var elems = new Int16Array((gs-1)*(gs-1)*2 * 3)
+    for (let n = 0; n < gs-1; n++) {
+        for (let i = 0; i < gs-1; i++) {
+            const trinum = n*(gs-1)*2 + i*2
+            const ul_i = n*gs + i
+            elems[trinum*3 + 0] = ul_i
+            elems[trinum*3 + 1] = ul_i + 1
+            elems[trinum*3 + 2] = ul_i + gs
+
+            elems[trinum*3 + 3] = ul_i + 1
+            elems[trinum*3 + 4] = ul_i + gs + 1
+            elems[trinum*3 + 5] = ul_i + gs
+        }
+    }
+    Data.elemBuffer = gl.createBuffer()
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, Data.elemBuffer)
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, elems, gl.STATIC_DRAW)
+}
+
+function projMatrixCamLoc(seconds) {
 
     // First transformation, rotate on xy plane
     var angspeed = 2*PI / (8) // One revolution every 8 seconds
-    var xy_rot = m4rotZ(angspeed*seconds)
+    var xy_rot = m4rotZ(-angspeed*seconds)
 
     // Second transformation, rotate camera down from z-axis to a certain angle, then bring a certain distance away
-    var down_tilt = PI/2 * (-0.8)
-    var down_rot = m4rotX(down_tilt)
+    var down_tilt = PI/2 * (0.8)
+    var down_rot = m4rotX(-down_tilt)
     var cam_dist = 2.5
     var cam_move = m4trans(0, 0, -cam_dist)
+    // Vector of the transformed camera location
+    var cam_loc = m4listmul([m4rotZ(angspeed*seconds), m4rotX(down_tilt), new Float32Array([0, 0, cam_dist, 1])])
 
 
     // Second transformation, bring camera down to look at the origin from closer to the xy plane (after rotating, so it's like the camera is spinning around)
@@ -249,7 +320,7 @@ function projMatrix(seconds) {
         aspect_mat = m4scale(1, w/h, 1)
     }
 
-    return m4listmul([cam_proj, cam_move, down_rot, xy_rot])
+    return [m4listmul([cam_proj, cam_move, down_rot, xy_rot]), cam_loc]
     // return m4scale(0.5, 1, 1)
 }
 
@@ -257,10 +328,18 @@ function draw(seconds) {
     gl.clear(gl.COLOR_BUFFER_BIT)
     gl.useProgram(program)  
 
-    const proj_mat = projMatrix(seconds)
-    gl.uniformMatrix4fv(program.uniforms.proj, false, proj_mat)
+    const [proj_mat, cam_loc] = projMatrixCamLoc(seconds)
+    // console.log(`Camera loc: ${cam_loc}`)
+    gl.uniformMatrix4fv(program.uniforms.u_proj, false, proj_mat)
+    gl.uniform3fv(program.uniforms.u_lightPos, Data.light_pos, 0, 3)
+    gl.uniform3fv(program.uniforms.u_camPos, cam_loc, 0, 3)
 
-    gl.drawArrays(gl.LINES, 0, Data.numVerts)
+    // gl.drawArrays(gl.LINES, 0, Data.numVerts)
+    if (Data.gridsize != 0) {
+        const gs = Data.gridsize
+        const num_tris = (gs-1)*(gs-1)*2
+        gl.drawElements(gl.TRIANGLES, num_tris*3, gl.UNSIGNED_SHORT, 0)
+    }
     // console.log("Wow we're gonna draw that's so cool")
 }
 
@@ -277,6 +356,7 @@ document.querySelector('#submit').addEventListener('click', event => {
     Data.faults = faults
     Data.grid = makeGrid(gridsize, faults)
     updateVertexBuffer(window.gl, Data.gridsize, Data.grid)
+    updateElementBuffer(window.gl)
 });
 
 
@@ -288,6 +368,7 @@ document.querySelector('#submit').addEventListener('click', event => {
 async function setup() {
     window.gl = document.querySelector('canvas').getContext('webgl2')
     gl.enable(gl.DEPTH_TEST)
+    // gl.enable(gl.CULL_FACE)
     const vs = await fetch('vs.glsl').then(res => res.text())
     const fs = await fetch('fs.glsl').then(res => res.text())
     window.program = compile(vs,fs)
