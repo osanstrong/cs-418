@@ -292,6 +292,13 @@ function updateElementBuffer(gl) {
     gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, elems, gl.STATIC_DRAW)
 }
 
+function camPosRotMat(pos, yaw, pitch) {
+    // Apply movement to camera position, then rotate
+    var R = m4mul(m4rotX(-pitch), m4rotZ(-yaw))
+    var T = m4trans(-pos[0], -pos[1], -pos[2])
+    return m4mul(R, T)
+}
+
 function projMatrixCamLoc(seconds) {
 
     // First transformation, rotate on xy plane
@@ -299,12 +306,18 @@ function projMatrixCamLoc(seconds) {
     var xy_rot = m4rotZ(-angspeed*seconds)
 
     // Second transformation, rotate camera down from z-axis to a certain angle, then bring a certain distance away
-    var down_tilt = PI/2 * (0.8)
-    var down_rot = m4rotX(-down_tilt)
-    var cam_dist = 2.5
-    var cam_move = m4trans(0, 0, -cam_dist)
+    // var down_tilt = PI/2 * (0.8)
+    // var down_rot = m4rotX(-down_tilt)
+    // var cam_move = m4trans(0, 0, -cam_dist)
     // Vector of the transformed camera location
-    var cam_loc = m4listmul([m4rotZ(angspeed*seconds), m4rotX(down_tilt), new Float32Array([0, 0, cam_dist, 1])])
+
+    var cam_yaw = angspeed*seconds;
+    var cam_pitch = PI/2 * (0.8)
+    var cam_dist = 2.5
+    var cam_loc = m4listmul([m4rotZ(cam_yaw), m4rotX(cam_pitch), new Float32Array([0, 0, cam_dist, 1])])
+
+    var cam_posrot = camPosRotMat(cam_loc, cam_yaw, cam_pitch)
+
 
 
     // Second transformation, bring camera down to look at the origin from closer to the xy plane (after rotating, so it's like the camera is spinning around)
@@ -320,7 +333,7 @@ function projMatrixCamLoc(seconds) {
         aspect_mat = m4scale(1, w/h, 1)
     }
 
-    return [m4listmul([cam_proj, cam_move, down_rot, xy_rot]), cam_loc]
+    return [m4listmul([cam_proj, cam_posrot]), cam_loc]
     // return m4scale(0.5, 1, 1)
 }
 
