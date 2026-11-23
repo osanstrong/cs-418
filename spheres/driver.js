@@ -1,4 +1,4 @@
-import { m4trans, m4rotZ, m4scale, m4mul, m4perspNegZ, m4rotX, m4rotY, m3mul, m3rotY, mul, mag, cross, normalize, sub, m3rotX, m3rotZ} from "./math.js"
+import { m4trans, m4rotZ, m4scale, m4mul, m4perspNegZ, m4rotX, m4rotY, m3mul, m3rotY, mul, mag, cross, normalize, sub, m3rotX, m3rotZ, add, dot} from "./math.js"
 
 /***
  * Multiplies from right to left
@@ -14,24 +14,17 @@ function m4uscale(scale) {
     return m4scale(scale, scale, scale)
 }
 class Data {
-    static grid = null
-    static gridsize = 0
-    static faults = 0
-    static numVerts = 0
-
-    static canv_width = 0
-    static canv_height = 0
+    static last_time = 0;
 
     static light_pos = new Float32Array([15, 5, 60])
 
-    static NUM_PARTICLES = 50
+    static NUM_PARTICLES = 1
     static WIDTH = 1
     static RADIUS = 0.15 * Data.WIDTH / 2
-    // static pos = new Float32Array(3*this.NUM_PARTICLES)
-    // static vel = new Float32Array(3*this.NUM_PARTICLES)
-    // static col = new Float32Array(3*this.NUM_PARTICLES)
     static ELAST_WALL = 0.9
     static ELAST_SPHERE = 0.9
+    static GRAVITY = 2
+    static MAX_DT = 0.1
 
     static spheres = []
 }
@@ -63,11 +56,81 @@ class Sphere {
         return m4mul(m4trans(p[0], p[1], p[2]), m4uscale(Data.RADIUS))
     }
 
+    //// Physics
+
+    updateGravity(dt) {
+        this.vel[2] -= Data.GRAVITY * dt
+    }
+
+    applyVelocity(dt) {
+        for (let i = 0; i < 3; i++) {
+            this.pos[i] += this.vel[i] * dt
+        }
+    }
+
+    /**
+     * 
+     * @param {*} overlap 
+     * @param {*} vel_other 
+     * @param {number} w : Corresponds to m_this / (m_this + m_other)
+     * @param {*} e 
+     * @param {*} other 
+     */
+    collide(overlap, vel_other, w, e, other) {
+        let dir = normalize(overlap)
+        
+        let v_a = mul(this.vel, dot(normalize(this.vel), dir))
+        let v_o = sub(this.vel, v_a)
+        
+        let b_a = mul(vel_other, dot(normalize(vel_other), dir))
+        let b_o = sub(vel_other, b_a)
+        if (mag(vel_other) == 0) {
+            b_a.fill(0);
+            b_o.fill(0);
+        }
+        // console.log(`b = ${vel_other} -> b_a=${b_a}, b_o=${b_o}`)
+        
+        let s = sub(v_a, b_o)
+        // console.log(`From v=${this.vel} to s=${s}`)
+
+        this.vel = add(v_o, sub(v_a, mul(s, (1-w)*(1+e))))
+
+        let fudge = 0.0
+        this.pos = sub(this.pos, mul(overlap, 1-w + fudge))
+
+        if (w > 0) {
+            // If weight is not 0, it means it's another sphere to send back
+        }
+    }
+
+
+    checkWalls() {
+        if (this.pos[2] - Data.RADIUS < 0) {
+            this.collide(new Float32Array([0, 0, this.pos[2]-Data.RADIUS]), new Float32Array(3), 0, Data.ELAST_WALL, null)
+        }
+    }
+
+
+
+    /**
+     * 
+     * @param {number} dt 
+     * @param {list} otherspheres, Specifically spheres which *should* be checked for collisions (i.e. spheres afterwards in index)
+     */
+    update(dt, otherspheres) {
+        this.updateGravity(dt)
+        this.applyVelocity(dt)
+        this.checkWalls()
+    }
+
+    //// Generators
+
     static genRand() {
         const pos = new Float32Array(3)
         const col = new Float32Array(4)
 
         for (let i = 0; i < 3; i++) pos[i] = (Math.random()-0.5)*(Data.WIDTH - 2*Data.RADIUS);
+        pos[2] += 0.5*Data.WIDTH
         for (let i = 0; i < 3; i++) col[i] = Math.random()**0.6;
 
         col[3] = 0.1
@@ -77,8 +140,6 @@ class Sphere {
 
         return new Sphere(pos, col)
     }
-
-
 }
 
 
@@ -279,6 +340,15 @@ function projMatrixCamLoc(seconds) {
 }
 
 function draw(seconds) {
+    //// SIMULATE
+    let dt = Math.min(seconds - Data.last_time, Data.MAX_DT)
+    Data.last_time = seconds
+    for (let i = 0; i < Data.spheres.length; i++) {
+        let sph = Data.spheres[i]
+        sph.update(dt, Data.spheres.slice(i))
+    }
+
+    //// DRAW 
     gl.clear(gl.COLOR_BUFFER_BIT)
     gl.useProgram(program)  
 
@@ -286,6 +356,7 @@ function draw(seconds) {
     // console.log(`Camera loc: ${cam_loc}`)
     gl.uniform3fv(program.uniforms.u_lightPos, Data.light_pos, 0, 3)
     gl.uniform3fv(program.uniforms.u_camPos, cam_loc, 0, 3)
+
 
     const nt = Data.numTris
     for (let i = 0; i < Data.spheres.length; i++){
