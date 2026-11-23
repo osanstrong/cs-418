@@ -18,7 +18,7 @@ class Data {
 
     static light_pos = new Float32Array([15, 5, 60])
 
-    static NUM_PARTICLES = 1
+    static NUM_PARTICLES = 20
     static WIDTH = 1
     static RADIUS = 0.15 * Data.WIDTH / 2
     static ELAST_WALL = 0.9
@@ -43,8 +43,16 @@ class Sphere {
         return this.pos
     }
 
+    setPos(pos) {
+        this.pos = pos
+    }
+
     getVel() {
         return this.vel
+    }
+
+    setVel(vel) {
+        this.vel = vel
     }
 
     getColor() {
@@ -81,7 +89,7 @@ class Sphere {
         
         let v_a = mul(this.vel, dot(normalize(this.vel), dir))
         let v_o = sub(this.vel, v_a)
-        
+
         let b_a = mul(vel_other, dot(normalize(vel_other), dir))
         let b_o = sub(vel_other, b_a)
         if (mag(vel_other) == 0) {
@@ -100,6 +108,28 @@ class Sphere {
 
         if (w > 0) {
             // If weight is not 0, it means it's another sphere to send back
+            // console.log(`Other before: p=${other.getPos()}`)
+            let b0 = other.getVel()
+            other.setPos(add(other.getPos(), mul(overlap, w + fudge)))
+            other.setVel(add(b_o, add(b_a, mul(s, w*(1+e)))))
+            // console.log(`Other afer: p=${other.getPos()}`)
+            let b1 = other.getVel()
+            console.log(`dir: ${dir}`)
+            console.log(`dv for other: ${sub(b1, b0)}`)
+
+        }
+    }
+
+    checkSpheres(otherspheres) {
+        for (let i = 0; i < otherspheres.length; i++) {
+            let other = otherspheres[i]
+            let dp = sub(this.pos, other.getPos())
+            let len = mag(dp)
+            let max_len = 2*Data.RADIUS
+            let w = 0.5 // Equal for now
+            if (len < max_len) {
+                this.collide(mul(normalize(dp), len-max_len), other.getVel(), w, Data.ELAST_SPHERE, other)
+            }
         }
     }
 
@@ -118,9 +148,11 @@ class Sphere {
      * @param {list} otherspheres, Specifically spheres which *should* be checked for collisions (i.e. spheres afterwards in index)
      */
     update(dt, otherspheres) {
+        // console.log(`Num other spheres: ${otherspheres.length}`)
         this.updateGravity(dt)
         this.applyVelocity(dt)
         this.checkWalls()
+        this.checkSpheres(otherspheres)
     }
 
     //// Generators
@@ -345,7 +377,7 @@ function draw(seconds) {
     Data.last_time = seconds
     for (let i = 0; i < Data.spheres.length; i++) {
         let sph = Data.spheres[i]
-        sph.update(dt, Data.spheres.slice(i))
+        sph.update(dt, Data.spheres.slice(i+1))
     }
 
     //// DRAW 
